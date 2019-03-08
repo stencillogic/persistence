@@ -1,0 +1,132 @@
+==== Grammatics ====
+
+[] - not mandatory
+{} - zero or more times
+() - grouping
+<low_case> - nonterminal
+other - terminals (optionally in double quotes)
+
+=== BNF ===
+
+<sql_statement> := <statement_body> ;
+
+<statement_body> := <select_statement> |
+                    <insert_statement> |
+                    <update_statement> |
+                    <delete_statement> |
+                    <create_statement> |
+                    <drop_statement> |
+                    <alter_statement>
+
+=== select ===
+
+<select_statement> := <single_select_statement>
+                      [ { ( UNION | INTERSECT | EXCEPT ) [ ALL ] <single_select_statement> } ]
+                      [ ORDER BY <order_by_expr_list> ]
+
+<order_by_expr_list> := <expression_with_sort> [ {, <expression_with_sort> } ]
+<expression_with_sort> := <expression> [ ASC | DESC ] [ NULLS ( FIRST | LAST ) ]
+
+<expression> := [ + | - ] <term> { [ + | - ] <term> }
+<term> := <multiplier> { [ * | / ] <multiplier> }
+<multiplier> := <literal> | <name> | "(" <expression> ")"
+
+<name> := <identifier> [ { . <identifier> } ]
+<identifier> := _ | letter [ { _ | - | letter | digit } ]
+
+<literal> := <string_literal> |
+             <number_literal>
+
+<string_literal> := ' { any_symbol_except_single_quote | '' } '
+
+<number_literal> := { digit } [ . digit { digit } ] | digit { digit } [ . { digit } ]
+
+<integer_literal> := digit { digit }
+
+<single_select_statement> := SELECT [ ALL | DISTINCT ] <projection>
+                             [ FROM <from> ]
+                             [ WHERE <conditional_expr> ]
+                             [ GROUP BY <expression_list> ]
+                             [ HAVING <predicates> ]
+
+<projection> := * | <expression_list>
+<expression_list> := <named_expression> [ {, <named_expression> } ]
+<named_expression> := <expression> [ [ AS ] <name> ]
+
+<from> := <from_item> [ ( [ INNER ] | [ CROSS ] | [ LEFT [ OUTER ] ] | [ RIGHT [ OUTER ] | FULL [ OUTER ] ] ) JOIN <from_item> [ ON <conditional_expr> ] ]
+
+<from_item> := <name> [ [ AS ] <name> ] |
+              "(" <select_statement> ")" [ [ AS ] <name> ]
+
+<conditional_expr> := <boolean_term> |
+                      <conditional_expr> OR <boolean_term>
+
+<boolean_term> := <boolean_factor> |
+                  <boolean_term> AND <boolean_factor>
+
+<boolean_factor> := [ NOT ] <boolean_test>
+<boolean_test> := <predicate> | "(" <conditional_expr> ")"
+<predicate> := <expression> ( > | < | >= | <= | = | <> ) <expression> | <expression> IS NULL
+
+=== insert ===
+
+<insert_statement> := INSERT INTO <name> [ AS <name> ] [ "(" <name> [ { , <name> } ] ")" ] ( VALUES "(" <expression>  [ { , <expression> } ] ")" | <select_statement> )
+
+=== delete ===
+
+<delete_statement> := DELETE FROM <name> [ [ AS ] <name> ] [ WHERE <conditional_expr> ]
+
+=== create ===
+
+<create_statement> := <create_table_statement> |
+                      <crate_datebase_statement>
+
+<create_table_statement> := CREATE TABLE <name> "(" <column_list> <table_constraints> ")"
+<column_list> := <column_desc> { , <column_desc> } 
+<column_desc> := <identifier> <data_type> [ <column_constraint> ]
+
+<datatype> := <char_type_desc> | <numeric_type_desc> | <timestamp_type_desc> | SMALLINT | INTEGER | FLOAT | DOUBLE_PRECISION | DATE
+<char_type_desc> := ( CHARACTER VARYING | VARCHAR ) "(" <integer_literal> ")"
+<numeric_type_desc> := ( DECIMAL | NUMBER ) [ "(" <integer_literal> , <integer_literal>  ")" ]
+<timestamp_type_desc> := TIMESTAMP [ "(" <integer_literal>  ")" ]
+
+<column_constraint> := [ CONSTRAINT <identifier> ] ( 
+                       NOT NULL | 
+                       NULL | 
+                       CHECK "(" <expression> ")" | 
+                       DEFAULT <expression> | 
+                       UNIQUE | 
+                       PRIMARY KEY )
+
+<table_constraint> := CONSTRAINT <identifier> (
+                      CHECK "(" <expression> ")" | 
+                      DEFAULT default_expr | 
+                      UNIQUE "(" <identifier> { , <identifier> } ")" | 
+                      PRIMARY KEY "(" <identifier> { , <identifier> } ")" |
+                      FOREIGN KEY "(" <identifier> { , <identifier> } ")" 
+                        REFERENCES <name> [ "(" <identifier> { , <identifier> } ")" ] [ ON DELETE ( RESTRICT | CASCADE | SET NULL | SET DEFAULT | NO ACTION ) ] )
+
+<create_database_statement> := CREATE DATABASE <identifier>
+
+=== drop ===
+
+<drop_statement> := <drop_table_statement> |
+                    <drop_database_statement>
+
+<drop_table_statement> := DROP TABLE <name>
+
+<drop_database_statement> := DROP DATABASE <identifier>
+
+=== alter ===
+
+<alter_statement> := <alter_table_statement>
+
+<alter_table_statement> := ALTER TABLE <name> ( <add_column> | <modify_column> | <drop_column> | <add_constraint> | <drop_constraint> | <rename> )
+<add_column> := ADD [ COLUMN ] <identifier> <data_type> 
+<modify_column> := ( ALTER | MODIFY ) [ COLUMN ] <identifier> [ <data_type> ]  [ DEFAULT <expression> ] [ NULL | NOT NULL ]
+<drop column> := DROP [ COLUMN ] <identifier>
+<add_constraint> := ADD <table_constraint>
+<drop_constraint> := DROP CONSTRAINT <identifier>
+<rename> := RENAME [ ( COLUMN | CONSTRAINT ) <identifier> TO <identifier> ] TO <identifier>
+
+
