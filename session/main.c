@@ -5,6 +5,7 @@
 #include "config/config.h"
 #include "logging/logger.h"
 #include "common/error.h"
+#include "session/listener.h"
 
 void write_error_and_exit()
 {
