@@ -3,4 +3,7 @@
 
 #include "defs/datatypes.h"
 
+#define _ach(x) (x)
+#define _wch(x) u(x)
+
 #endif

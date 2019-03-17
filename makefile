@@ -18,12 +18,17 @@ INSTALL_PATH=/opt/persistence
 INSTALL_CMD=cp -fp
 INSTALL_SL_PATH=/usr/local/bin
 
-all: $(ALL_O)
+all: build config
+
+build: $(ALL_O)
 	$(CC) -o $(TGT_BUILD_DIR)/$(TGT_NAME) $^ $(CFLAGS)
 
 $(TGT_BUILD_DIR)/%.o: %.c $(ALL_H)
 	mkdir -p $(dir $@)
 	$(CC) -c -o $@ $< $(CFLAGS)
+
+config: persistence.cfg
+	cp $< $(TGT_BUILD_DIR)
 
 clean:
 	if [ -d $(TGT_BUILD_DIR) ]; then rm -rf $(TGT_BUILD_DIR); fi

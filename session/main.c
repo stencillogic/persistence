@@ -9,10 +9,11 @@
 
 void write_error_and_exit()
 {
-    fputs("Error: ", stderr);
+    fflush(stdout);
+    fputs("Fatal: ", stderr);
     fputs((const char*)error_msg(), stderr);
     fputc('\n', stderr);
-    exit(error_code());
+    exit(error_get());
 }
 
 int main(int argc, char **argv)
@@ -24,7 +25,7 @@ int main(int argc, char **argv)
         write_error_and_exit();
     }
 
-    if(logger_create())
+    if(logger_create(_ach("listener.log")))
     {
         write_error_and_exit();
     }
