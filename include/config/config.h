@@ -25,6 +25,7 @@ typedef enum _config_option
     CONFIG_LOGGING_MODE = 0,
     CONFIG_LOG_DIR = 1,
     CONFIG_LOG_FILE_SIZE_THRESHOLD = 2,
+    CONFIG_LISTENER_TCP_PORT = 3
 } config_option;
 
 // searches for configuration file and loads config

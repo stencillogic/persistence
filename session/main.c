@@ -10,10 +10,8 @@
 void write_error_and_exit()
 {
     fflush(stdout);
-    fputs("Fatal: ", stderr);
-    fputs((const char*)error_msg(), stderr);
-    fputc('\n', stderr);
-    exit(error_get());
+    fputs(_ach("Fatal, terminating\n"), stderr);
+    exit(1);
 }
 
 int main(int argc, char **argv)

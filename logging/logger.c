@@ -131,11 +131,10 @@ sint8 reopen_log_file()
 
     logger_print_to_stream(stdout, LOG_LEVEL_INFO, _ach("Opening new log file: %s"), g_log_file_path);
 
-    g_current_log = open(g_log_file_path, O_APPEND|O_CREAT|O_WRONLY);
+    g_current_log = open(g_log_file_path, O_APPEND|O_CREAT|O_WRONLY|O_CLOEXEC);
     if(-1 == g_current_log)
     {
         logger_print_to_stream(stderr, LOG_LEVEL_ERROR, _ach("Failed to open a new log file"));
-        error_set(ERROR_CREATE_LOG);
         return 1;
     }
     return 0;
@@ -159,7 +158,6 @@ sint8 logger_create(const achar *log_file_name)
     if (!(stat(log_dir, &sb) == 0 && S_ISDIR(sb.st_mode)))
     {
         logger_print_to_stream(stderr, LOG_LEVEL_ERROR, _ach("Log directory: %s"), strerror(errno));
-        error_set(ERROR_CREATE_LOG);
         return 1;
     }
 
@@ -203,7 +201,6 @@ void logger_write(logging_level level, const achar* fmt, va_list ap)
         if(written <= 0)
         {
             logger_print_to_stream(stderr, LOG_LEVEL_ERROR, _ach("Writing to log file: %s"), strerror(errno));
-            error_set(ERROR_WRITING_TO_LOG);
         }
 
         g_log_file_size += total_written;

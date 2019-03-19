@@ -8,7 +8,7 @@
 #include <assert.h>
 #include <errno.h>
 
-#define CONFIG_ENTRIES_NUM 3
+#define CONFIG_ENTRIES_NUM 4
 
 typedef enum _config_option_type
 {
@@ -31,7 +31,8 @@ config_entry g_config[CONFIG_ENTRIES_NUM] =
 {
     {CONFIG_LOGGING_MODE, _ach("logging_mode"), CONFIG_TYPE_STRING, _ach("warn"), 0L, 0.0},
     {CONFIG_LOG_DIR, _ach("log_dir"), CONFIG_TYPE_STRING, _ach("/var/log/persistence"), 0L, 0.0},
-    {CONFIG_LOG_FILE_SIZE_THRESHOLD, _ach("log_file_size_threshold"), CONFIG_TYPE_INT, _ach(""), 1024*1024*10, 0.0}
+    {CONFIG_LOG_FILE_SIZE_THRESHOLD, _ach("log_file_size_threshold"), CONFIG_TYPE_INT, _ach(""), 1024*1024*10, 0.0},
+    {CONFIG_LISTENER_TCP_PORT, _ach("listener_tcp_port"), CONFIG_TYPE_INT, _ach(""), 3000, 0.0}
 };
 
 /////////////////////////////////////
@@ -142,7 +143,7 @@ sint8 config_parse_line(achar *line, uint32 line_num, sint32 *option_name_start,
 
     if(0 == s)
     {
-        logger_error(_ach("Option value is not specified, at line %u pos %d\n"), line_num, p);
+        logger_error(_ach("Option value is not specified, at line %u pos %d"), line_num, p);
         return -1;
     }
 
@@ -159,7 +160,7 @@ sint8 check_config_valid()
     entry = config_get_entry(CONFIG_LOG_FILE_SIZE_THRESHOLD);
     if(4096 > entry->int_value)
     {
-        logger_error(_ach("Value for option %s must be greater than or equal to 4096\n"), entry->option_name);
+        logger_error(_ach("Value for option %s must be greater than or equal to 4096"), entry->option_name);
         return 1;
     }
 
@@ -169,7 +170,14 @@ sint8 check_config_valid()
              || 0 == strcmp(entry->str_value, _ach("warn"))
              || 0 == strcmp(entry->str_value, _ach("error"))))
     {
-        logger_error(_ach("Value for option %s must be one of 'debug', 'info', 'warn', 'error'\n"), entry->option_name);
+        logger_error(_ach("Value for option %s must be one of 'debug', 'info', 'warn', 'error'"), entry->option_name);
+        return 1;
+    }
+
+    entry = config_get_entry(CONFIG_LISTENER_TCP_PORT);
+    if(entry->int_value <= 0 || entry->int_value >= 65536)
+    {
+        logger_error(_ach("Value for option %s is invalid port number"), entry->option_name);
         return 1;
     }
 
@@ -213,7 +221,6 @@ sint8 config_create()
     if(!fp)
     {
         logger_error(_ach("Configuration file opening: %s"), strerror(errno));
-        error_set(ERROR_FAILED_TO_LOAD_CONFIG);
         return 1;
     }
 
@@ -223,7 +230,6 @@ sint8 config_create()
         if(strlen(str_buf) >= CONFIG_FILE_MAX_LINE_LEN)
         {
             logger_error(_ach("Line length exceeds %d symbols, at line %u"), CONFIG_FILE_MAX_LINE_LEN, line_num);
-            error_set(ERROR_FAILED_TO_LOAD_CONFIG);
             fclose(fp);
             return 1;
         }
@@ -234,7 +240,6 @@ sint8 config_create()
         switch(res)
         {
             case -1:
-                error_set(ERROR_FAILED_TO_LOAD_CONFIG);
                 fclose(fp);
                 return 1;
             case 0:
@@ -248,7 +253,6 @@ sint8 config_create()
 
                 if(config_set_entry_value(option, str_buf+ovs, ovl) > 0)
                 {
-                    error_set(ERROR_FAILED_TO_LOAD_CONFIG);
                     fclose(fp);
                 }
 
@@ -261,7 +265,6 @@ sint8 config_create()
     if(0 == feof(fp))
     {
         logger_error(_ach("Reading configuration file: %s\n"), strerror(serrno));
-        error_set(ERROR_FAILED_TO_LOAD_CONFIG);
         fclose(fp);
         return 1;
     }
@@ -275,7 +278,6 @@ sint8 config_create()
 
     if(check_config_valid())
     {
-        error_set(ERROR_FAILED_TO_LOAD_CONFIG);
         return 1;
     }
 
@@ -295,11 +297,9 @@ sint8 config_get_int(config_option option, sint64 *value)
         }
         else
         {
-            error_set(ERROR_CONFIG_OPTION_WRONG_TYPE);
             return 1;
         }
     }
-    error_set(ERROR_NO_SUCH_CONFIG_OPTION);
     return 1;
 }
 
@@ -315,11 +315,9 @@ sint8 config_get_float(config_option option, float64 *value)
         }
         else
         {
-            error_set(ERROR_CONFIG_OPTION_WRONG_TYPE);
             return 1;
         }
     }
-    error_set(ERROR_NO_SUCH_CONFIG_OPTION);
     return 1;
 }
 
@@ -334,7 +332,6 @@ const achar* config_get_str(config_option option)
         }
         else
         {
-            error_set(ERROR_CONFIG_OPTION_WRONG_TYPE);
             return NULL;
         }
     }

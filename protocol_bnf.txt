@@ -1,0 +1,104 @@
+Interaction protocol description
+
+=== Server message BNF: ===
+
+  <server_message> ::= <error_message> | <success_message> | <recordset_message> | <progress_message> | <hello_message> |
+                       <auth_request_message> | <auth_responce_message> | <goodbye_message>
+
+  <error_message> ::= <error_msg_magic> <text_string>
+    <error_msg_magic> ::= 0x0F
+
+    <text_string> ::= <text_string_magic> { <character> } <text_string_terminator>
+    <text_string_magic> ::= 0x01
+    <character> ::= any byte except <string_terminator>
+    <text_string_terminator> ::= 0x00 | 0x0000
+
+  <success_message> ::= <success_message_with_text> | <success_message_without_text>
+    <success_message_with_text> ::= <success_message_with_text_magic> <text_string>
+    <success_message_with_text_magic> ::= 0xF01
+    <success_message_without_text> ::= <success_message_without_text_magic>
+    <success_message_without_text_magic> ::= 0xF02
+
+  <recordset_message> ::= <recordset_message_magic> <recordset_descriptor> { <recordset_row> } <recordset_end>
+    <recordset_message_magic> ::= 0xFF
+
+    <recordset_descriptor> ::= <col_num> { <col_descriptor> }
+    <col_descriptor> ::= <data_type> <col_alias>
+    <data_type> ::= <data_type_code> [ <data_type_length> | <data_type_precision> <data_type_scale> ]
+    <data_type_code> ::= one of _column_datatype enum values, uint8
+    <data_type_length> ::= uint64 value in network order - max length defined for data type
+    <data_type_precision> ::= 1-byte value of data type precision
+    <data_type_scale> ::= 1-byte value of data type scale
+    <col_alias> ::= <text_string>
+
+    <recordset_row> ::= <recordset_row_magic> { <cell_value> }
+    <recordset_row_magic> ::= 0x06
+    <cell_value> ::= <text_string> | <numeric_value> | <timestamp_value> | <smallint_value> | <integer_value> | <float_value> | <double_precision_value> | <date_value>
+    <numeric_value> ::= <numeric_value_magic> [ <numeric_value_value> ]
+    <timestamp_value> ::= <timestamp_value_magic> [ <timestamp_value_value> ]
+    <smallint_value> ::= <smallint_value_magic> [ <smallint_value_value> ]
+    <integer_value> ::= <integer_value_magic> [ <integer_value_value> ]
+    <float_value> ::= <float_value_magic> [ <float_value_value> ]
+    <double_precision_value> ::= <double_precision_value_magic> [ <double_precision_value_value> ]
+    <date_value> ::= <date_value_magic> [ <date_value_value> ]
+
+    <numeric_value_magic> ::= 0x02
+    <timestamp_value_magic> ::= 0x08
+    <smallint_value_magic> ::= 0x04
+    <integer_value_magic> ::= 0x03
+    <float_value_magic> ::= 0x05
+    <double_precision_value_magic> ::= 0x06
+    <date_value_magic> ::= 0x07
+
+    <numeric_value_value> ::= bytes representing numeric value
+    <timestamp_value_value> ::= uint64 value of microseconds
+    <smallint_value_value> ::= sint16 value
+    <integer_value_value> ::= sint32 value
+    <float_value_value> ::= float32 value
+    <double_precision_value_value> ::= float64 value
+    <date_value_value> ::= uint64 value of seconds
+
+    <recordset_end> ::= 0x88
+
+  <progress_message> ::= 0x44
+
+  <hello_message> ::= <hello_message_magic> <protocol_version> [ <text_string> ]
+    <hello_message_magic> ::= 0x1985 (network order)
+    <protocol_version> ::= <major_protocol_version> <minor_protocol_version>
+    <major_protocol_version> ::= uint16 in network order
+    <minor_protocol_version> ::= uint16 in network order
+
+  <auth_request_message> ::= <auth_request_message_magic> <salt_key>
+    <auth_request_message_magic> ::= 0x11
+    <salt_key> ::= uint64 value in network byte order
+
+  <auth_responce_message> ::= <auth_responce_message_magic> ( <auth_success> | <auth_fail> )
+    <auth_responce_message_magic> ::= 0x33
+    <auth_success> ::= 0xCC
+    <auth_fail> ::= 0xFF
+
+  <goodbye_message> ::= 0xBEEE (network order)
+
+
+=== Client message BNF: ===
+
+  <client_message> ::= <hello_message> | <auth_message> | <sql_request_message> | <cancel_message> | <goodbye_message>
+
+  <hello_message> ::= <hello_message_magic>
+    <hello_message_magic> ::= 0x1406 (network order)
+
+  <auth_message> ::= <auth_message_magic> | <credentials>
+    <auth_message_magic> ::= 0x22
+    <credentials> ::= <user_name> <encrypted_password>
+    <user_name> ::= <text_string>
+    <encrypted_password> ::= 64 uint8 values in network order (512 bit sha-3)
+
+  <sql_request_message> ::= <sql_request_message_magic> <sql_request>
+    <sql_request_message_magic> ::= 0x55
+    <sql_request> ::= <text_string>
+
+  <cancel_message> ::= <cancel_message_magic>
+    <cancel_message_magic> ::= 0x57
+
+  <goodbye_message> ::= 0xBEEE (network order)
+

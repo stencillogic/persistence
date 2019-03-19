@@ -12,15 +12,14 @@
 
 typedef enum _column_datatype
 {
-    CHARACTER_VARYING=1,
-	DECIMAL,
-    INTEGER,
-	SMALLINT,
-	FLOAT,
-	DOUBLE_PRECISION,
-	DATE,
-    TIMESTAMP,
-	INTERVAL
+    CHARACTER_VARYING = 0x01,
+	DECIMAL = 0x02,
+    INTEGER = 0x03,
+	SMALLINT = 0x04,
+	FLOAT = 0x05,
+	DOUBLE_PRECISION = 0x06,
+	DATE = 0x07,
+    TIMESTAMP = 0x08
 } column_datatype;
 
 typedef enum _constraint_type

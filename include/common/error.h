@@ -1,18 +1,14 @@
 #ifndef _ERROR_H
 #define _ERROR_H
 
-// Error messages and codes
+// Error messages and codes for db clients
 
 #include "defs/defs.h"
 
 typedef enum _error_code
 {
     ERROR_NO_ERROR=0,
-    ERROR_NO_SUCH_CONFIG_OPTION,
-    ERROR_CONFIG_OPTION_WRONG_TYPE,
-    ERROR_FAILED_TO_LOAD_CONFIG,
-    ERROR_CREATE_LOG,
-    ERROR_WRITING_TO_LOG
+    ERROR_SESSION_INIT_FAIL
 } error_code;
 
 // return error code of last operation
