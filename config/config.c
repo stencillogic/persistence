@@ -335,6 +335,5 @@ const achar* config_get_str(config_option option)
             return NULL;
         }
     }
-    error_set(ERROR_NO_SUCH_CONFIG_OPTION);
     return NULL;
 }

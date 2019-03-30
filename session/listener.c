@@ -1,9 +1,16 @@
 #include "session/listener.h"
+#include "session/session.h"
 #include "common/error.h"
 #include "config/config.h"
 #include "logging/logger.h"
+#include "session/pproto_server.h"
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <assert.h>
+#include <unistd.h>
+#include <errno.h>
 
 #define LISTENER_BACKLOG 10
 
@@ -44,30 +51,59 @@ sint8 listener_create()
         return 1;
     }
 
-    sint8 not_terminated = 1;
+    sint8 not_terminated = 1, result = 1, is_listener = 1;
     while(not_terminated)
     {
         client_addr_size = sizeof(client_addr);
-        client_sock = accept4(sock, (struct sockaddr *)&client_addr, &client_addr_size, SOCK_CLOEXEC);
+        client_sock = accept(sock, (struct sockaddr *)&client_addr, &client_addr_size);
         if(-1 == client_sock)
         {
-            logger_error("Accepting connection from client: %s", strerror(errno));
+            // TODO process errno values, define cycle break conditions
+            logger_error(_ach("Accepting connection from client: %s"), strerror(errno));
         }
         else
         {
             pid_t pid = fork();
             if(pid < 0)
             {
-                error_set(ERROR_SESSION_INIT_FAIL);
-                const achar *errmes = error_msg();
-                ioutils_send_fully();
+                pproto_send_error(ERROR_SESSION_INIT_FAIL);
             }
             else if(pid == 0)
             {
-                execve();
+                is_listener = 0;
+                not_terminated = 0;
+
+                if(-1 == close(sock))
+                {
+                    result = errno;
+                    logger_warn(_ach("Closing listener socket: %s"), strerror(errno));
+                }
+
+                result = session_create(client_sock);
+
+                if(-1 == shutdown(client_sock, SHUT_WR))
+                {
+                    if(!(ENOTCONN == errno))
+                    {
+                        logger_warn(_ach("Shutting down client connection: %s"), strerror(errno));
+                    }
+                }
+                if(-1 == close(client_sock))
+                {
+                    logger_error(_ach("Closing client socket: %s"), strerror(errno));
+                }
             }
         }
     }
 
-    return 0;
+    if(is_listener > 0)
+    {
+        if(-1 == close(sock))
+        {
+            result = errno;
+            logger_error(_ach("Closing listener socket: %s"), strerror(errno));
+        }
+    }
+
+    return result;
 }

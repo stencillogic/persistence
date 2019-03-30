@@ -16,13 +16,17 @@
 
 #define MAX_LOG_MSG_LEN 4096
 
-logging_level g_logger_log_level = LOG_LEVEL_DEBUG;
-uint32 g_log_file_name_base = 0;
-achar g_log_file_path[CONFIG_FILE_MAX_LINE_LEN + 258];
-int g_current_log = -1;
-achar g_log_msg_buf[MAX_LOG_MSG_LEN];
-size_t g_log_file_size;
-size_t g_log_file_size_threshold;
+
+struct {
+    logging_level   log_level;
+    uint32          log_file_name_base;
+    achar           log_file_path[CONFIG_FILE_MAX_LINE_LEN + 258];
+    int             current_log;
+    achar           log_msg_buf[MAX_LOG_MSG_LEN];
+    size_t          log_file_size;
+    size_t          log_file_size_threshold;
+} g_logger_state;
+
 
 size_t logger_prepare_msg(logging_level level, const achar* fmt, va_list ap)
 {
@@ -33,7 +37,7 @@ size_t logger_prepare_msg(logging_level level, const achar* fmt, va_list ap)
     int res_len;
     if((time(&t) != -1) && ((ptm = localtime(&t)) != NULL))
     {
-        dttm_shift = strftime(g_log_msg_buf, bufsz, _ach("%Y-%m-%d %H:%M:%S"), ptm);
+        dttm_shift = strftime(g_logger_state.log_msg_buf, bufsz, _ach("%Y-%m-%d %H:%M:%S"), ptm);
     }
 
     const achar* lvl_str = _ach(", unkn,  ");
@@ -44,25 +48,25 @@ size_t logger_prepare_msg(logging_level level, const achar* fmt, va_list ap)
         case LOG_LEVEL_INFO:  lvl_str = _ach(", info,  "); break;
         case LOG_LEVEL_DEBUG: lvl_str = _ach(", debug, "); break;
     }
-    memcpy(g_log_msg_buf + dttm_shift, lvl_str, 9*sizeof(achar));
+    memcpy(g_logger_state.log_msg_buf + dttm_shift, lvl_str, 9*sizeof(achar));
     dttm_shift += 9;
 
-    res_len = vsnprintf(g_log_msg_buf + dttm_shift, bufsz - dttm_shift, fmt, ap);
+    res_len = vsnprintf(g_logger_state.log_msg_buf + dttm_shift, bufsz - dttm_shift, fmt, ap);
 
     if(res_len + dttm_shift == MAX_LOG_MSG_LEN - 1)
     {
-        if(_ach('\n') != g_log_msg_buf[MAX_LOG_MSG_LEN - 2])
+        if(_ach('\n') != g_logger_state.log_msg_buf[MAX_LOG_MSG_LEN - 2])
         {
-            memcpy(g_log_msg_buf + MAX_LOG_MSG_LEN - 6, _ach("...\n"), 4*sizeof(achar));
+            memcpy(g_logger_state.log_msg_buf + MAX_LOG_MSG_LEN - 6, _ach("...\n"), 4*sizeof(achar));
         }
     }
     else
     {
         if(res_len < 0) res_len = 0;
-        if(_ach('\n') != g_log_msg_buf[dttm_shift + res_len - 1])
+        if(_ach('\n') != g_logger_state.log_msg_buf[dttm_shift + res_len - 1])
         {
-            g_log_msg_buf[dttm_shift + res_len] = _ach('\n');
-            g_log_msg_buf[dttm_shift + res_len + 1] = _ach('\0');
+            g_logger_state.log_msg_buf[dttm_shift + res_len] = _ach('\n');
+            g_logger_state.log_msg_buf[dttm_shift + res_len + 1] = _ach('\0');
             res_len += 1;
         }
     }
@@ -75,23 +79,23 @@ void logger_print_to_stream(FILE *fp, logging_level level, const achar *fmt, ...
     va_list args;
     va_start(args, fmt);
     logger_prepare_msg(level, fmt, args);
-    fputs(g_log_msg_buf, fp);
+    fputs(g_logger_state.log_msg_buf, fp);
     va_end(args);
 }
 
 // close logger
 sint8 logger_close()
 {
-    if(g_current_log != -1)
+    if(g_logger_state.current_log != -1)
     {
         logger_print_to_stream(stdout, LOG_LEVEL_INFO, _ach("Closing current log file"));
-        if(close(g_current_log) == -1)
+        if(close(g_logger_state.current_log) == -1)
         {
             logger_print_to_stream(stderr, LOG_LEVEL_ERROR, _ach("Failed to close current log file: %s"), strerror(errno));
             return 1;
         }
     }
-    g_log_file_size = 0;
+    g_logger_state.log_file_size = 0;
     return 0;
 }
 
@@ -125,14 +129,14 @@ sint8 reopen_log_file()
     if(formatted_len > 0)
     {
         sz = formatted_len*sizeof(achar);
-        memcpy(g_log_file_path + g_log_file_name_base, formatted_tm, sz);
+        memcpy(g_logger_state.log_file_path + g_logger_state.log_file_name_base, formatted_tm, sz);
     }
-    g_log_file_path[g_log_file_name_base + sz] = _ach('\0');
+    g_logger_state.log_file_path[g_logger_state.log_file_name_base + sz] = _ach('\0');
 
-    logger_print_to_stream(stdout, LOG_LEVEL_INFO, _ach("Opening new log file: %s"), g_log_file_path);
+    logger_print_to_stream(stdout, LOG_LEVEL_INFO, _ach("Opening new log file: %s"), g_logger_state.log_file_path);
 
-    g_current_log = open(g_log_file_path, O_APPEND|O_CREAT|O_WRONLY|O_CLOEXEC);
-    if(-1 == g_current_log)
+    g_logger_state.current_log = open(g_logger_state.log_file_path, O_APPEND|O_CREAT|O_WRONLY|O_CLOEXEC);
+    if(-1 == g_logger_state.current_log)
     {
         logger_print_to_stream(stderr, LOG_LEVEL_ERROR, _ach("Failed to open a new log file"));
         return 1;
@@ -143,14 +147,17 @@ sint8 reopen_log_file()
 // create logger, returns 0 on success, non 0 otherwise
 sint8 logger_create(const achar *log_file_name)
 {
+    g_logger_state.log_file_name_base = 0;
+    g_logger_state.current_log = -1;
+
     const achar* mode = config_get_str(CONFIG_LOGGING_MODE);
     assert(mode != NULL);
-    if(0 == strcmp(mode, _ach("debug"))) g_logger_log_level = LOG_LEVEL_DEBUG;
-    if(0 == strcmp(mode, _ach("info"))) g_logger_log_level = LOG_LEVEL_INFO;
-    if(0 == strcmp(mode, _ach("warn"))) g_logger_log_level = LOG_LEVEL_WARN;
-    if(0 == strcmp(mode, _ach("error"))) g_logger_log_level = LOG_LEVEL_ERROR;
+    if(0 == strcmp(mode, _ach("debug"))) g_logger_state.log_level = LOG_LEVEL_DEBUG;
+    if(0 == strcmp(mode, _ach("info"))) g_logger_state.log_level = LOG_LEVEL_INFO;
+    if(0 == strcmp(mode, _ach("warn"))) g_logger_state.log_level = LOG_LEVEL_WARN;
+    if(0 == strcmp(mode, _ach("error"))) g_logger_state.log_level = LOG_LEVEL_ERROR;
 
-    assert(config_get_int(CONFIG_LOG_FILE_SIZE_THRESHOLD, (sint64*)&g_log_file_size_threshold) == 0);
+    assert(config_get_int(CONFIG_LOG_FILE_SIZE_THRESHOLD, (sint64*)&g_logger_state.log_file_size_threshold) == 0);
 
     const achar *log_dir = config_get_str(CONFIG_LOG_DIR);
 
@@ -168,46 +175,46 @@ sint8 logger_create(const achar *log_file_name)
 
     if(log_dir_len > 0)
     {
-        memcpy(g_log_file_path, log_dir, log_dir_len);
+        memcpy(g_logger_state.log_file_path, log_dir, log_dir_len);
         if(log_dir[log_dir_len - 1] != _ach('/'))
         {
-            g_log_file_path[log_dir_len] = _ach('/');
+            g_logger_state.log_file_path[log_dir_len] = _ach('/');
             log_dir_len += 1;
         }
     }
-    memcpy(g_log_file_path + log_dir_len, log_file_name, log_file_name_len);
-    g_log_file_name_base = log_dir_len + log_file_name_len;
+    memcpy(g_logger_state.log_file_path + log_dir_len, log_file_name, log_file_name_len);
+    g_logger_state.log_file_name_base = log_dir_len + log_file_name_len;
 
     return reopen_log_file();
 }
 
 logging_level logger_log_level()
 {
-    return g_logger_log_level;
+    return g_logger_state.log_level;
 }
 
 void logger_write(logging_level level, const achar* fmt, va_list ap)
 {
-    if(g_logger_log_level <= level)
+    if(g_logger_state.log_level <= level)
     {
         size_t written, total_written = 0, left;
         int fd;
 
         left = logger_prepare_msg(level, fmt, ap);
 
-        fd = (-1 == g_current_log) ? ( level == LOG_LEVEL_ERROR ? STDERR_FILENO : STDOUT_FILENO ) : g_current_log;
+        fd = (-1 == g_logger_state.current_log) ? ( level == LOG_LEVEL_ERROR ? STDERR_FILENO : STDOUT_FILENO ) : g_logger_state.current_log;
 
-        while(left > total_written && (written = write(fd, g_log_msg_buf, left - total_written)) > 0) total_written += written;
+        while(left > total_written && (written = write(fd, g_logger_state.log_msg_buf, left - total_written)) > 0) total_written += written;
         if(written <= 0)
         {
             logger_print_to_stream(stderr, LOG_LEVEL_ERROR, _ach("Writing to log file: %s"), strerror(errno));
         }
 
-        g_log_file_size += total_written;
-        if(-1 != g_current_log && g_log_file_size >= g_log_file_size_threshold)
+        g_logger_state.log_file_size += total_written;
+        if(-1 != g_logger_state.current_log && g_logger_state.log_file_size >= g_logger_state.log_file_size_threshold)
         {
             if(reopen_log_file()) {
-                g_log_file_size = 0;  // if failed to open new log reset written size for current
+                g_logger_state.log_file_size = 0;  // if failed to open new log reset written size for current
             }
         }
     }

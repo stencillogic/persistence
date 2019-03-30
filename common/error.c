@@ -1,16 +1,15 @@
 #include "common/error.h"
 
-#define ERROR_CODE_NUM 2
+#define ERROR_CODE_NUM 3
 
 achar *g_error_msg[] =
 {
     _ach("ECODE=00001: no error"),
-    _ach("ECODE=00002: session initialization failed")
+    _ach("ECODE=00002: session initialization failed"),
+    _ach("ECODE=00003: protocol violation")
 };
 
 error_code g_current_error_code = 0;
-
-g_error_code_buf[50];
 
 // return error code of last operation
 error_code error_get()

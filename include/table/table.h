@@ -4,11 +4,11 @@
 #include "defs/defs.h"
 
 #define MAX_TABLE_COLUMNS 1024;			// 2^16 is max value here
-#define MAX_TABLE_NAME_LEN 64;
-#define MAX_TABLE_COL_NAME_LEN 64;
-#define MAX_CONSTRAINT_NAME_LEN 64;
+#define MAX_TABLE_NAME_LEN 256;
+#define MAX_TABLE_COL_NAME_LEN 256;
+#define MAX_CONSTRAINT_NAME_LEN 256;
 #define MAX_CHECK_CONSTRAINT_EXPRESSION_LEN 8192;
-#define MAX_DEFAULT_VALUE_CHAR_LEN 64;
+#define MAX_DEFAULT_VALUE_CHAR_LEN 256;
 
 typedef enum _column_datatype
 {
@@ -34,7 +34,7 @@ typedef struct _table_constraint_desc
 {
 	uint32 			table_desc_id;
 	uint32			id;
-	wchar  			name[MAX_CONSTRAINT_NAME_LEN];
+	uint8  			name[MAX_CONSTRAINT_NAME_LEN];
 	constraint_type type;
 } table_constraint_desc;
 
@@ -59,7 +59,7 @@ typedef struct _fk_constraint_col_desc	// constraint-column correspondence
 typedef struct _check_constraint_details_desc
 {
 	uint32  table_constraint_desc_id;
-	wchar	expression[MAX_CHECK_CONSTRAINT_EXPRESSION_LEN];	// TODO: replace with expression tree
+	uint8	expression[MAX_CHECK_CONSTRAINT_EXPRESSION_LEN];	// TODO: replace with expression tree
 } check_constraint_details_desc;
 
 typedef struct _col_default_value_desc
@@ -75,7 +75,7 @@ typedef struct _col_default_value_desc
 		float32 float_val;
 		int32	integer_val;
 		uint8   decimal_val[20];
-		wchar	char_val[MAX_DEFAULT_VALUE_CHAR_LEN];
+		uint8	char_val[MAX_DEFAULT_VALUE_CHAR_LEN];
 	} value;
 } col_default_value_desc;
 
@@ -83,7 +83,7 @@ typedef struct _table_col_desc
 {
 	uint32				   table_desc_id;
 	uint16				   id;
-    wchar                  name[MAX_TABLE_COL_NAME_LEN];
+    uint8                  name[MAX_TABLE_COL_NAME_LEN];
     column_datatype        datatype;
 	uint32				   len;		// aka precision for numeric types and fraction of second in timestamp
 	uint32				   scale;
@@ -94,7 +94,7 @@ typedef struct _table_col_desc
 typedef struct _table_desc
 {
 	uint32	 id;
-    wchar 	 name[MAX_TABLE_NAME_LEN];
+    uint8 	 name[MAX_TABLE_NAME_LEN];
 	uint8	 is_temporary;
 	uint16	 degree;	// number of columns
 } table_desc;

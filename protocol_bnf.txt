@@ -8,10 +8,15 @@ Interaction protocol description
   <error_message> ::= <error_msg_magic> <text_string>
     <error_msg_magic> ::= 0x0F
 
-    <text_string> ::= <text_string_magic> { <character> } <text_string_terminator>
-    <text_string_magic> ::= 0x01
+    <text_string> ::= <unbound_text_string> | <limited_text_string>
+    <unbound_text_string> ::= <unbound_text_string_magic> { <character> } <text_string_terminator>
+    <unbound_text_string_magic> ::= 0x01
     <character> ::= any byte except <string_terminator>
     <text_string_terminator> ::= 0x00 | 0x0000
+
+    <limited_text_string> ::= <limited_text_string_magic> <text_string_length> { <character> }
+    <limited_text_string_magic> ::= 0xFE
+    <text_string_length> ::= uint32 length of the string in bytes
 
   <success_message> ::= <success_message_with_text> | <success_message_without_text>
     <success_message_with_text> ::= <success_message_with_text_magic> <text_string>
@@ -77,15 +82,16 @@ Interaction protocol description
     <auth_success> ::= 0xCC
     <auth_fail> ::= 0xFF
 
-  <goodbye_message> ::= 0xBEEE (network order)
+  <goodbye_message> ::= 0xBE
 
 
 === Client message BNF: ===
 
   <client_message> ::= <hello_message> | <auth_message> | <sql_request_message> | <cancel_message> | <goodbye_message>
 
-  <hello_message> ::= <hello_message_magic>
+  <hello_message> ::= <hello_message_magic> <client_encoding>
     <hello_message_magic> ::= 0x1406 (network order)
+    <client_encoding> ::= default client encoding, uint16 value matching one of values from "encoding" enum in common/encoding.h except ENCODING_UNKNOWN
 
   <auth_message> ::= <auth_message_magic> | <credentials>
     <auth_message_magic> ::= 0x22
@@ -100,5 +106,23 @@ Interaction protocol description
   <cancel_message> ::= <cancel_message_magic>
     <cancel_message_magic> ::= 0x57
 
-  <goodbye_message> ::= 0xBEEE (network order)
+  <goodbye_message> ::= 0xBE
+
+
+=== Protocol semantics ===
+
+Typical message flow:
+
+1. Client connects to server and sends client <hello_message>.
+2. Server answers with server's <hello_message> and sends <auth_request_message>.
+3. Client authenticates with sending <auth_message> to server.
+4. Server checks client's credentials and sends <auth_responce_message> to client.
+5. If authentication was successful client can send <sql_request_message> or <goodbye_message> to server.
+6. Server executes sql and sends <progress_message> during execution or <recordset_message> or <success_message> when execution completes to the client.
+7 .During execution of <sql_request_message> by server client can send <cancel_message>, server will stop execution of the request and will send <success_message> to confirm execution was stopped.
+8. If client sends <goodbye_message> server answers with <goodbye_message> and closes connection.
+
+Client's <auth_message> semantics:
+<user_name> must not be longer than 64 characters long.
+
 

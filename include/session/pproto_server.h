@@ -1,168 +1,146 @@
 #ifndef _PPROTO_SERVER_H
 #define _PPROTO_SERVER_H
 
-// Interaction protocol, server side
-//
-// Server message BNF:
-//   <server_message> ::= <error_message> | <success_message> | <recordset_message> | <progress_message> | <hello_message> |
-//                        <auth_request_message> | <auth_responce_message> | <goodbye_message>
-//
-//   <error_message> ::= <error_msg_magic> <text_string>
-//     <error_msg_magic> ::= 0x0F
-//
-//     <text_string> ::= <text_string_magic> { <character> } <text_string_terminator>
-//     <text_string_magic> ::= 0x01
-//     <character> ::= any byte except <string_terminator>
-//     <text_string_terminator> ::= 0x00 | 0x0000
-//
-//   <success_message> ::= <success_message_with_text> | <success_message_without_text>
-//     <success_message_with_text> ::= <success_message_with_text_magic> <text_string>
-//     <success_message_with_text_magic> ::= 0xF01
-//     <success_message_without_text> ::= <success_message_without_text_magic>
-//     <success_message_without_text_magic> ::= 0xF02
-//
-//   <recordset_message> ::= <recordset_message_magic> <recordset_descriptor> { <recordset_row> } <recordset_end>
-//     <recordset_message_magic> ::= 0xFF
-//
-//     <recordset_descriptor> ::= <col_num> { <col_descriptor> }
-//     <col_descriptor> ::= <data_type> <col_alias>
-//     <data_type> ::= <data_type_code> [ <data_type_length> | <data_type_precision> <data_type_scale> ]
-//     <data_type_code> ::= one of _column_datatype enum values, uint8
-//     <data_type_length> ::= uint64 value in network order - max length defined for data type
-//     <data_type_precision> ::= 1-byte value of data type precision
-//     <data_type_scale> ::= 1-byte value of data type scale
-//     <col_alias> ::= <text_string>
-//
-//     <recordset_row> ::= <recordset_row_magic> { <cell_value> }
-//     <recordset_row_magic> ::= 0x06
-//     <cell_value> ::= <text_string> | <numeric_value> | <timestamp_value> | <smallint_value> | <integer_value> | <float_value> | <double_precision_value> | <date_value>
-//     <numeric_value> ::= <numeric_value_magic> [ <numeric_value_value> ]
-//     <timestamp_value> ::= <timestamp_value_magic> [ <timestamp_value_value> ]
-//     <smallint_value> ::= <smallint_value_magic> [ <smallint_value_value> ]
-//     <integer_value> ::= <integer_value_magic> [ <integer_value_value> ]
-//     <float_value> ::= <float_value_magic> [ <float_value_value> ]
-//     <double_precision_value> ::= <double_precision_value_magic> [ <double_precision_value_value> ]
-//     <date_value> ::= <date_value_magic> [ <date_value_value> ]
-//
-//     <numeric_value_magic> ::= 0x02
-//     <timestamp_value_magic> ::= 0x08
-//     <smallint_value_magic> ::= 0x04
-//     <integer_value_magic> ::= 0x03
-//     <float_value_magic> ::= 0x05
-//     <double_precision_value_magic> ::= 0x06
-//     <date_value_magic> ::= 0x07
-//
-//     <numeric_value_value> ::= bytes representing numeric value
-//     <timestamp_value_value> ::= uint64 value of microseconds
-//     <smallint_value_value> ::= sint16 value
-//     <integer_value_value> ::= sint32 value
-//     <float_value_value> ::= float32 value
-//     <double_precision_value_value> ::= float64 value
-//     <date_value_value> ::= uint64 value of seconds
-//
-//     <recordset_end> ::= 0x88
-//
-//   <progress_message> ::= 0x44
-//
-//   <hello_message> ::= <hello_message_magic> <protocol_version> [ <text_string> ]
-//     <hello_message_magic> ::= 0x1985 (network order)
-//     <protocol_version> ::= <major_protocol_version> <minor_protocol_version>
-//     <major_protocol_version> ::= uint16 in network order
-//     <minor_protocol_version> ::= uint16 in network order
-//
-//   <auth_request_message> ::= <auth_request_message_magic> <salt_key>
-//     <auth_request_message_magic> ::= 0x11
-//     <salt_key> ::= uint64 value in network byte order
-//
-//   <auth_responce_message> ::= <auth_responce_message_magic> ( <auth_success> | <auth_fail> )
-//     <auth_responce_message_magic> ::= 0x33
-//     <auth_success> ::= 0xCC
-//     <auth_fail> ::= 0xFF
-//
-//   <goodbye_message> ::= 0xBEEE (network order)
-//
-// Client message BNF:
-//
-//   <client_message> ::= <hello_message> | <auth_message> | <sql_request_message> | <cancel_message> | <goodbye_message>
-//
-//   <hello_message> ::= <hello_message_magic>
-//     <hello_message_magic> ::= 0x1406 (network order)
-//
-//   <auth_message> ::= <auth_message_magic> | <credentials>
-//     <auth_message_magic> ::= 0x22
-//     <credentials> ::= <user_name> <encrypted_password>
-//     <user_name> ::= <text_string>
-//     <encrypted_password> ::= 64 uint8 values in network order (512 bit sha-3)
-//
-//   <sql_request_message> ::= <sql_request_message_magic> <sql_request>
-//     <sql_request_message_magic> ::= 0x55
-//     <sql_request> ::= <text_string>
-//
-//   <cancel_message> ::= <cancel_message_magic>
-//     <cancel_message_magic> ::= 0x57
-//
-//   <goodbye_message> ::= 0xBEEE (network order)
-//
+#include "common/encoding.h"
+#include "common/error.h"
 
-#define PPROTO_VERSION 0x0101u
+#define PPROTO_MAJOR_VERSION 0x0001u
+#define PPROTO_MINOR_VERSION 0x0001u
 
 // different magics
-#define PPROTO_TEXT_STRING_TERMINATOR 0x00
-#define PPROTO_WTEXT_STRING_TERMINATOR 0x0000
-#define PPROTO_RECORDSET_END 0x88
-#define PPROTO_AUTH_SUCCESS 0xCC
-#define PPROTO_AUTH_FAIL 0xFF
-#define PPROTO_GOODBYE_MESSAGE 0xBEEE
-#define PPROTO_RECORDSET_ROW_MAGIC 0x06
+#define PPROTO_TEXT_STRING_TERMINATOR 0x00u
+#define PPROTO_WTEXT_STRING_TERMINATOR 0x0000u
+#define PPROTO_RECORDSET_END 0x88u
+#define PPROTO_AUTH_SUCCESS 0xCCu
+#define PPROTO_AUTH_FAIL 0xFFu
+#define PPROTO_GOODBYE_MESSAGE 0xBEu
+#define PPROTO_RECORDSET_ROW_MAGIC 0x06u
 
 // data type magics
-#define PPROTO_TEXT_STRING_MAGIC 0x01
-#define PPROTO_NUMERIC_VALUE_MAGIC 0x02
-#define PPROTO_INTEGER_VALUE_MAGIC 0x03
-#define PPROTO_SMALLINT_VALUE_MAGIC 0x04
-#define PPROTO_FLOAT_VALUE_MAGIC 0x05
-#define PPROTO_DOUBLE_PRECISION_VALUE_MAGIC 0x06
-#define PPROTO_DATE_VALUE_MAGIC 0x07
-#define PPROTO_TIMESTAMP_VALUE_MAGIC 0x08
+#define PPROTO_UTEXT_STRING_MAGIC 0x01u
+#define PPROTO_LTEXT_STRING_MAGIC 0xFEu
+#define PPROTO_NUMERIC_VALUE_MAGIC 0x02u
+#define PPROTO_INTEGER_VALUE_MAGIC 0x03u
+#define PPROTO_SMALLINT_VALUE_MAGIC 0x04u
+#define PPROTO_FLOAT_VALUE_MAGIC 0x05u
+#define PPROTO_DOUBLE_PRECISION_VALUE_MAGIC 0x06u
+#define PPROTO_DATE_VALUE_MAGIC 0x07u
+#define PPROTO_TIMESTAMP_VALUE_MAGIC 0x08u
 
 // server message magics
-#define PPROTO_SERVER_HELLO_MAGIC 0x1985
-#define PPROTO_ERROR_MSG_MAGIC 0x0F
-#define PPROTO_SUCCESS_MESSAGE_WITH_TEXT_MAGIC 0xF01
-#define PPROTO_SUCCESS_MESSAGE_WITHOUT_TEXT_MAGIC 0xF02
-#define PPROTO_RECORDSET_MESSAGE_MAGIC 0xFF
-#define PPROTO_AUTH_REQUEST_MESSAGE_MAGIC 0x11
-#define PPROTO_AUTH_RESPONCE_MESSAGE_MAGIC 0x33
-#define PPROTO_PROGRESS_MESSAGE_MAGIC 0x44
+#define PPROTO_SERVER_HELLO_MAGIC 0x1985u
+#define PPROTO_ERROR_MSG_MAGIC 0x0Fu
+#define PPROTO_SUCCESS_MESSAGE_WITH_TEXT_MAGIC 0xF01u
+#define PPROTO_SUCCESS_MESSAGE_WITHOUT_TEXT_MAGIC 0xF02u
+#define PPROTO_RECORDSET_MESSAGE_MAGIC 0xFFu
+#define PPROTO_AUTH_REQUEST_MESSAGE_MAGIC 0x11u
+#define PPROTO_AUTH_RESPONCE_MESSAGE_MAGIC 0x33u
+#define PPROTO_PROGRESS_MESSAGE_MAGIC 0x44u
 
 // client message magics
-#define PPROTO_CLIENT_HELLO_MAGIC 0x1406
-#define PPROTO_AUTH_MESSAGE_MAGIC 0x22
-#define PPROTO_SQL_REQUEST_MESSAGE_MAGIC 0x55
-#define PPROTO_CANCEL_MESSAGE_MAGIC 0x57
+#define PPROTO_CLIENT_HELLO_MAGIC 0x1406u
+#define PPROTO_AUTH_MESSAGE_MAGIC 0x22u
+#define PPROTO_SQL_REQUEST_MESSAGE_MAGIC 0x55u
+#define PPROTO_CANCEL_MESSAGE_MAGIC 0x57u
 
-sint8 pproto_parse_message();
+// length and size limits
+#define PPROTO_AUTH_USER_NAME_SZ 260
+#define PPROTO_AUTH_USER_NAME_LEN 64
+#define PPROTO_AUTH_CREDENTIAL_SZ 512
 
-sint8 pproto_send_error();
-sint8 pproto_send_text_string();
+typedef enum _pproto_msg_type
+{
+    PPROTO_MSG_TYPE_ERR = -1,
+    PPROTO_UNKNOWN_MSG = 0,
+    PPROTO_SERVER_HELLO_MSG = 1,
+    PPROTO_ERROR_MSG_MSG = 2,
+    PPROTO_SUCCESS_WITH_TEXT_MSG = 3,
+    PPROTO_SUCCESS_WITHOUT_TEXT_MSG = 4,
+    PPROTO_RECORDSET_MSG = 5,
+    PPROTO_AUTH_REQUEST_MSG = 6,
+    PPROTO_AUTH_RESPONCE_MSG = 7,
+    PPROTO_PROGRESS_MSG = 8,
+    PPROTO_CLIENT_HELLO_MSG = 9,
+    PPROTO_AUTH_MSG = 10,
+    PPROTO_SQL_REQUEST_MSG = 11,
+    PPROTO_CANCEL_MSG = 12,
+    PPROTO_GOODBYE_MSG = 13
+} pproto_msg_type;
+
+typedef struct _auth_credentials
+{
+    uint8 user_name[PPROTO_AUTH_USER_NAME_SZ + ENCODING_MAXCHAR_LEN];
+    uint8 credentials[PPROTO_AUTH_CREDENTIAL_SZ];
+} auth_credentials;
+
+// set socket to work with
+void pproto_set_sock(int client_sock);
+
+// set client encoding
+void pproto_set_encoding(encoding client_encoding);
+
+// sends error defined by errcode to client
+// return 0 on success, non 0 otherwise
+sint8 pproto_send_error(error_code errcode);
+
+// sends goodbye message to client
+// return 0 on success, non 0 otherwise
+sint8 pproto_send_goodbye();
+
+sint8 pproto_send_text_string(const achar *str);
+
 sint8 pproto_send_success_message_with_text();
-sint8 pproto_send_success_message_without_text();
-sint8 pproto_send_recordset();
-sint8 pproto_send_recordset_row();
-sint8 pproto_send_numeric_value();
-sint8 pproto_send_timestamp_value();
-sint8 pproto_send_smallint_value();
-sint8 pproto_send_integer_value();
-sint8 pproto_send_float_value();
-sint8 pproto_send_double_precision_value();
-sint8 pproto_send_date_value();
-sint8 pproto_send_hello();
-sint8 pproto_send_auth_request();
-sint8 pproto_send_auth_responce();
 
-sint8 pproto_parse_auth_message();
-sint8 pproto_parse_sql_request_message();
-sint8 pproto_parse_cancel_message();
-sint8 pproto_parse_hello_message();
+sint8 pproto_send_success_message_without_text();
+
+sint8 pproto_send_recordset();
+
+sint8 pproto_send_recordset_row();
+
+sint8 pproto_send_numeric_value();
+
+sint8 pproto_send_timestamp_value();
+
+sint8 pproto_send_smallint_value();
+
+sint8 pproto_send_integer_value();
+
+sint8 pproto_send_float_value();
+
+sint8 pproto_send_double_precision_value();
+
+sint8 pproto_send_date_value();
+
+
+// sends server hello message
+// return 0 on success, non 0 otherwise
+sint8 pproto_send_server_hello();
+
+// sends authentication request
+// return 0 on success, non 0 otherwise
+sint8 pproto_send_auth_request();
+
+// sends authentication status: success if auth_status = 1, failure otherwise
+// return 0 on success, non 0 otherwise
+sint8 pproto_send_auth_responce(uint8 auth_status);
+
+// read auth message from client, returns credentials
+// return 0 on successful authentication, 1 on wrong credentials, -1 on error
+sint8 pproto_read_auth(auth_credentials *cred);
+
+// read sql message from client
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_sql_request();
+
+// read cancel message from client
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_cancel();
+
+// read hello message from client
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_client_hello();
+
+// return next message type or -1 on error
+pproto_msg_type pproto_read_msg_type();
 
 #endif
