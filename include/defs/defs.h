@@ -6,4 +6,6 @@
 #define _ach(x) (x)
 #define _wch(x) u(x)
 
+#define SERVER_DEFAULT_PORT 18774
+
 #endif

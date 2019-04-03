@@ -73,9 +73,8 @@ Interaction protocol description
     <major_protocol_version> ::= uint16 in network order
     <minor_protocol_version> ::= uint16 in network order
 
-  <auth_request_message> ::= <auth_request_message_magic> <salt_key>
+  <auth_request_message> ::= <auth_request_message_magic> 
     <auth_request_message_magic> ::= 0x11
-    <salt_key> ::= uint64 value in network byte order
 
   <auth_responce_message> ::= <auth_responce_message_magic> ( <auth_success> | <auth_fail> )
     <auth_responce_message_magic> ::= 0x33

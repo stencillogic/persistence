@@ -1,6 +1,7 @@
 #include "session/session.h"
 #include "session/pproto_server.h"
 #include "logging/logger.h"
+#include "auth/auth_server.h"
 #include <unistd.h>
 #include <string.h>
 
@@ -38,7 +39,8 @@ struct {
     int client_sock;
     encoding client_encoding;
     encoding server_encoding;
-} g_session_state = {-1, ENCODING_UNKNOWN, ENCODING_UNKNOWN};
+    uint32 user_id;
+} g_session_state = {-1, ENCODING_UNKNOWN, ENCODING_UNKNOWN, 0};
 
 encoding session_encoding()
 {
@@ -47,6 +49,9 @@ encoding session_encoding()
 
 sint8 session_auth_client()
 {
+    sint8 res;
+    auth_credentials cred;
+
     if(pproto_read_client_hello(&g_session_state.client_encoding) != 0)
     {
         return 1;
@@ -70,16 +75,16 @@ sint8 session_auth_client()
         return 1;
     }
 
-    sint8 res;
-    auth_credentials cred;
     while(1)
     {
         res = pproto_read_auth(&cred);
         sleep(1);
         if(0 == res)
         {
-            // TODO: check credetials
-            break;
+            if(auth_check_credentials(&cred, &g_session_state.user_id) == 1)
+            {
+                break;
+            }
         }
         else if(-1 == res)
         {
@@ -91,8 +96,6 @@ sint8 session_auth_client()
             return 1;
         }
     }
-
-    memset(&cred, 0, sizeof(cred));
 
     if(pproto_send_auth_responce(1))
     {

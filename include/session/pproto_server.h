@@ -1,8 +1,11 @@
 #ifndef _PPROTO_SERVER_H
 #define _PPROTO_SERVER_H
 
+// server-side protocol
+
 #include "common/encoding.h"
 #include "common/error.h"
+#include "auth/auth.h"
 
 #define PPROTO_MAJOR_VERSION 0x0001u
 #define PPROTO_MINOR_VERSION 0x0001u
@@ -43,11 +46,6 @@
 #define PPROTO_SQL_REQUEST_MESSAGE_MAGIC 0x55u
 #define PPROTO_CANCEL_MESSAGE_MAGIC 0x57u
 
-// length and size limits
-#define PPROTO_AUTH_USER_NAME_SZ 260
-#define PPROTO_AUTH_USER_NAME_LEN 64
-#define PPROTO_AUTH_CREDENTIAL_SZ 512
-
 typedef enum _pproto_msg_type
 {
     PPROTO_MSG_TYPE_ERR = -1,
@@ -67,11 +65,6 @@ typedef enum _pproto_msg_type
     PPROTO_GOODBYE_MSG = 13
 } pproto_msg_type;
 
-typedef struct _auth_credentials
-{
-    uint8 user_name[PPROTO_AUTH_USER_NAME_SZ + ENCODING_MAXCHAR_LEN];
-    uint8 credentials[PPROTO_AUTH_CREDENTIAL_SZ];
-} auth_credentials;
 
 // set socket to work with
 void pproto_set_sock(int client_sock);

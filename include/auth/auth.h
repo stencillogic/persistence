@@ -1,21 +1,20 @@
 #ifndef _AUTH_H
 #define _AUTH_H
 
-typedef enum _auth_method
+// authentication data structures and functions
+
+#include "defs/defs.h"
+
+// length and size limits
+#define AUTH_USER_NAME_SZ 260
+#define AUTH_CREDENTIAL_SZ 512
+
+typedef struct _auth_credentials
 {
-    AUTH_BUILT_IN = 1
-} auth_method;
+    uint8 user_name[AUTH_USER_NAME_SZ];
+    uint8 credentials[AUTH_CREDENTIAL_SZ];
+} auth_credentials;
 
-
-
-// loads credentials from the buffer
-// returns 1 on successfull authentication, 0 otherwise
-uint8 auth_check_credentials(const void *credentials, uint64 sz);
-
-// erases credentials, leaving authenticated user id
-void auth_deallocate_credentials(handle credentials);
-
-// returns currently authenticated user id or -1 if not authenticated
-sint32 auth_get_user_id();
+void auth_hash_pwd(uint8* password, uint32 password_len, uint8 *credentials);
 
 #endif

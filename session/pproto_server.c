@@ -1,6 +1,7 @@
 #include "session/pproto_server.h"
 #include "common/ioutils.h"
 #include "logging/logger.h"
+#include <string.h>
 
 
 void pproto_set_sock(int client_sock)
@@ -62,7 +63,8 @@ sint8 pproto_read_text_string(uint8 *buf, uint32 *sz, uint32 *charlen)
 sint8 pproto_read_auth(auth_credentials *cred)
 {
     uint8 magic;
-    uint32 sz = sizeof(cred->user_name), charlen;
+    uint8 user_name[AUTH_USER_NAME_SZ + ENCODING_MAXCHAR_LEN];
+    uint32 sz = sizeof(user_name), charlen;
     if(ioutils_get_uint8(&magic) != 0)
     {
         logger_error(_ach("pproto, failed to read auth message: io error"));
@@ -75,16 +77,20 @@ sint8 pproto_read_auth(auth_credentials *cred)
         return 1;
     }
 
-    if(pproto_read_text_string(cred->user_name, &sz, &charlen) != 0)
+    if(pproto_read_text_string(user_name, &sz, &charlen) != 0)
     {
         logger_error(_ach("pproto, failed to read auth message user name: io error"));
         return 1;
     }
 
-    if(sz > PPROTO_AUTH_USER_NAME_SZ)
+    if(sz > AUTH_USER_NAME_SZ || 0 == sz)
     {
-        logger_error(_ach("pproto, auth message user name is too long: io error"));
+        logger_error(_ach("pproto, auth message user name is invalid: io error"));
         return 1;
+    }
+    else
+    {
+        memcpy(cred->user_name, user_name, sz);
     }
 
     if(ioutils_get(cred->credentials, 64) != 0)
@@ -136,10 +142,9 @@ sint8 pproto_read_client_hello(encoding *client_encoding)
     return 0;
 }
 
-sint8 pproto_send_auth_request(uint64 salt)
+sint8 pproto_send_auth_request()
 {
     if(ioutils_send_uint8(PPROTO_AUTH_REQUEST_MESSAGE_MAGIC) != 0
-            || ioutils_send_uint64(salt) != 0
             || ioutils_flush_send() != 0)
     {
         logger_error(_ach("pproto, failed to send auth request message: io error"));
