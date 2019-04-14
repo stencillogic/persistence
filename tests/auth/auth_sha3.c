@@ -1,4 +1,5 @@
 #include "auth/auth_sha3.h"
+#include "tests.h"
 #include <stdio.h>
 #include <string.h>
 

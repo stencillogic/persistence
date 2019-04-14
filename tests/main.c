@@ -22,6 +22,7 @@ int process_test_fail(int test_result, const char* test, int line)
 int main(int argc, char **argv)
 {
     process_test_fail(test_auth_sha3_512(), "test_auth_sha3_512", __LINE__);
+    process_test_fail(test_grigorian_calendar(), "test_grigorian_calendar", __LINE__);
 
     printf("Test execution completed.\n");
     return 0;

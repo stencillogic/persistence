@@ -65,19 +65,31 @@ typedef enum _pproto_msg_type
     PPROTO_GOODBYE_MSG = 13
 } pproto_msg_type;
 
+typedef struct _pproto_recordset_desc
+{
+    uint16 col_num;
+    struct pproto_col_desc
+    {
+        uint8               data_type_precision;
+        uint8               data_type_scale;
+        uint16              col_alias_sz;
+        column_data_type    data_type;
+        uint64              data_type_len;
+        alias               col_alias[MAX_TABLE_COL_NAME_LEN];
+    } *cols;
+} pproto_recordset_desc;
 
 // set socket to work with
 void pproto_set_sock(int client_sock);
 
-// sends error defined by errcode to client
+// initiate string read
 // return 0 on success, non 0 otherwise
-sint8 pproto_send_error(error_code errcode);
+sint8 pproto_read_str_begin();
 
-// sends goodbye message to client
+// read string data by chunks into strbuf of length sz
+// set sz to actually read bytes size
 // return 0 on success, non 0 otherwise
-sint8 pproto_send_goodbye();
-
-sint8 pproto_send_text_string(const achar *str);
+sint8 pproto_read_str(uint8 *strbuf, uint32 *sz);
 
 sint8 pproto_send_success_message_with_text();
 
@@ -102,36 +114,54 @@ sint8 pproto_send_double_precision_value();
 sint8 pproto_send_date_value();
 
 
-// sends server hello message
+// return next message type or -1 on error
+pproto_msg_type pproto_read_msg_type();
+
+// read server hello message
 // return 0 on success, non 0 otherwise
 sint8 pproto_read_server_hello();
 
-// sends authentication request
+// read authentication request
 // return 0 on success, non 0 otherwise
 sint8 pproto_read_auth_request();
 
-// sends authentication status: success if auth_status = 1, failure otherwise
+// read authentication status: success if auth_status = 1, failure otherwise
 // return 0 on success, non 0 otherwise
 sint8 pproto_read_auth_responce(uint8 *auth_status);
 
-// read auth message from client, returns credentials
-// return 0 on successful authentication, 1 on wrong credentials, -1 on error
-sint8 pproto_send_auth(auth_credentials *cred);
-
-// read sql message from client
+// reads error to errcode
 // return 0 on success, non 0 otherwise
-sint8 pproto_send_sql_request();
+sint8 pproto_read_error(error_code *errcode);
 
-// read cancel message from client
-// return 0 on success, non 0 otherwise
-sint8 pproto_send_cancel();
 
-// read hello message from client
+// send client hello message
 // return 0 on success, non 0 otherwise
 sint8 pproto_send_client_hello(encoding client_encoding);
 
-// return next message type or -1 on error
-pproto_msg_type pproto_read_msg_type();
+// send auth message with auth credentials
+// return 0 on successful authentication, 1 on wrong credentials, -1 on error
+sint8 pproto_send_auth(auth_credentials *cred);
+
+// sends goodbye message to client
+// return 0 on success, non 0 otherwise
+sint8 pproto_send_goodbye();
+
+
+// start sending sql statement
+// return 0 on success, 1 on error
+sint8 pproto_sql_stmt_begin();
+
+// send sql statement data
+// return 0 on success, 1 on error
+sint8 pproto_send_sql_stmt(const uint8* data, uint32 sz);
+
+// finish sending sql statement
+// return 0 on success, 1 on error
+sint8 pproto_sql_stmt_finish();
+
+// send cancel message to cancel running statement
+// return 0 on success, non 0 otherwise
+sint8 pproto_send_cancel();
 
 
 #endif

@@ -28,6 +28,7 @@ Interaction protocol description
     <recordset_message_magic> ::= 0xFF
 
     <recordset_descriptor> ::= <col_num> { <col_descriptor> }
+    <col_num> ::= column number in recordset, uin16 in network order
     <col_descriptor> ::= <data_type> <col_alias>
     <data_type> ::= <data_type_code> [ <data_type_length> | <data_type_precision> <data_type_scale> ]
     <data_type_code> ::= one of _column_datatype enum values, uint8
