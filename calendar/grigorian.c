@@ -92,7 +92,7 @@ uint8 grigorian_extract_month_of_year(uint64 date)
     return month;
 }
 
-uint32 grigorian_extract_day_of_month(uint64 date)
+uint8 grigorian_extract_day_of_month(uint64 date)
 {
     sint16 year_day = (date - grigorian_trunc_to_year(date)) / SECONDS_IN_DAY;
     uint8 is_leap = grigorian_is_leap_year(date);
@@ -141,3 +141,5 @@ sint8 grigorian_make_date(uint64 *date, uint64 year, uint8 month, uint8 day)
 
     return 0;
 }
+
+

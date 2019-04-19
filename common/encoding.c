@@ -3,10 +3,21 @@
 #include <string.h>
 #include <assert.h>
 
-#define ENCODING_NUM 3
 
-int g_aux_utf8_length_states[5] = {CHAR_STATE_INVALID, CHAR_STATE_COMPLETE,
-    CHAR_STATE_INCOMPLETE, CHAR_STATE_INCOMPLETE, CHAR_STATE_INCOMPLETE};
+struct _encoding_state
+{
+    uint8   initialized;
+    int     utf8_length_states[5];
+} g_encoding_state = {
+    .initialized = 0,
+    .utf8_length_states = {
+        CHAR_STATE_INVALID,
+        CHAR_STATE_COMPLETE,
+        CHAR_STATE_INCOMPLETE,
+        CHAR_STATE_INCOMPLETE,
+        CHAR_STATE_INCOMPLETE
+    }
+};
 
 //
 // Conversion functions
@@ -14,7 +25,7 @@ int g_aux_utf8_length_states[5] = {CHAR_STATE_INVALID, CHAR_STATE_COMPLETE,
 
 void encoding_ascii_to_utf8(const_char_info *src, char_info *dst)
 {
-    dst->chr[0] = src->chr[0];
+    dst->chr[0] = (src->chr[0] > 0x7Fu) ? 0x3Fu : src->chr[0];
     dst->length = 1;
 }
 
@@ -68,7 +79,7 @@ void encoding_build_utf8_char(char_info *chr, uint8 byte)
             (0xE0u == (0xF0u & byte)) ? 3 :
             (0xF0u == (0XF8u & byte)) ? 4 : 0;
 
-        chr->state = g_aux_utf8_length_states[chr->length];
+        chr->state = g_encoding_state.utf8_length_states[chr->length];
     }
     else
     {
@@ -107,6 +118,7 @@ struct _encoding_props
     encoding_char_len_fun char_len_fun;
 } g_encoding_props[ENCODING_NUM];
 
+
 void encoding_set_entry(int id, const achar* name, uint8 is_varlen, uint8 charlen,
         uint8 *string_terminator, uint8 string_terminator_len, encoding_build_char_fun build_char_fun,
         encoding_char_len_fun char_len_fun)
@@ -125,11 +137,15 @@ void encoding_set_entry(int id, const achar* name, uint8 is_varlen, uint8 charle
 
 void encoding_init()
 {
+    if(g_encoding_state.initialized) return;
+
     uint8 terminator[ENCODING_MAXCHAR_LEN];
     memset(terminator, 0, ENCODING_MAXCHAR_LEN);
     encoding_set_entry(0, _ach("Unknown"), 0, 0, 0, 0, NULL, NULL);
     encoding_set_entry(1, _ach("ASCII"),   0, 1, terminator, 1, encoding_build_ascii_char, encoding_ascii_char_len);
-    encoding_set_entry(3, _ach("UTF-8"),   1, 0, terminator, 1, encoding_build_utf8_char, encoding_utf8_char_len);
+    encoding_set_entry(2, _ach("UTF-8"),   1, 0, terminator, 1, encoding_build_utf8_char, encoding_utf8_char_len);
+
+    g_encoding_state.initialized = 1;
 }
 
 const achar* encoding_name(encoding enc)

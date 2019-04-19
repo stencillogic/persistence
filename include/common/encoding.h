@@ -6,12 +6,13 @@
 #include "defs/defs.h"
 
 #define ENCODING_MAXCHAR_LEN 4      // longest possible character in all supported encodings
+#define ENCODING_NUM 3              // number of encodings in encoding enum
 
 typedef enum _encoding
 {
     ENCODING_UNKNOWN = 0,
     ENCODING_ASCII = 1,
-    ENCODING_UTF8 = 3
+    ENCODING_UTF8 = 2
 } encoding;
 
 // aux struct for holding state while reading characters from byte stream
@@ -25,17 +26,17 @@ typedef enum _encoding_char_state
 typedef struct _char_info
 {
     uint8 *chr;
-    encoding_char_state state;
     uint8 length;
     uint8 ptr;
+    encoding_char_state state;
 } char_info;
 
 typedef struct _const_char_info
 {
     const uint8 *chr;
-    encoding_char_state state;
     uint8 length;
     uint8 ptr;
+    encoding_char_state state;
 } const_char_info;
 
 

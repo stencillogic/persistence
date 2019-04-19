@@ -259,7 +259,7 @@ uint32 calc_col_width(struct pproto_col_desc *cd)
             if(w < 15) w = 15;
             if(w > col_double_len) w = col_double_len;
             break;
-        case DATE:
+        case DATE:  // yyyy-mm-dd hh:mi:ss
             if(w < 50) w = 50;
             if(w > col_date_len) w = col_date_len;
             break;

@@ -14,5 +14,6 @@ int test_auth_sha3_512()
     uint8 hash[64];
     auth_sha3_512((const uint8 *)input, strlen(input), hash);
 
-    return memcmp(expected_val, hash, 64);
+    if(memcmp(expected_val, hash, 64)) return __LINE__;
+    return 0;
 }

@@ -18,7 +18,7 @@ uint64 grigorian_extract_year(uint64 date);
 uint8 grigorian_extract_month_of_year(uint64 date);
 
 // extract and return day of month of certain date
-uint32 grigorian_extract_day_of_month(uint64 date);
+uint8 grigorian_extract_day_of_month(uint64 date);
 
 // build date from year, month, day, hour, minute, seconds
 // month is in 0..11, year must be > 0
