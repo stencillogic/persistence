@@ -13,12 +13,13 @@ struct
     uint8 digit_buf[10][ENCODING_MAXCHAR_LEN];
     char_info digits[10];
 
-    uint8 fmt_letters_buf[5][ENCODING_MAXCHAR_LEN];
+    uint8 fmt_letters_buf[6][ENCODING_MAXCHAR_LEN];
     char_info fmt_letter_y;
     char_info fmt_letter_m;
     char_info fmt_letter_d;
     char_info fmt_letter_h;
     char_info fmt_letter_s;
+    char_info sign_minus;
 } g_strop_state = { .enc = ENCODING_UNKNOWN, .conversion_fun = NULL};
 
 void strop_set_encoding(encoding enc)
@@ -43,12 +44,14 @@ void strop_set_encoding(encoding enc)
     g_strop_state.fmt_letter_m.chr = g_strop_state.fmt_letters_buf[2];
     g_strop_state.fmt_letter_h.chr = g_strop_state.fmt_letters_buf[3];
     g_strop_state.fmt_letter_s.chr = g_strop_state.fmt_letters_buf[4];
+    g_strop_state.sign_minus.chr   = g_strop_state.fmt_letters_buf[5];
 
     ach = _ach('y'); g_strop_state.conversion_fun((const_char_info *)&achr, &(g_strop_state.fmt_letter_y));
     ach = _ach('m'); g_strop_state.conversion_fun((const_char_info *)&achr, &(g_strop_state.fmt_letter_m));
     ach = _ach('d'); g_strop_state.conversion_fun((const_char_info *)&achr, &(g_strop_state.fmt_letter_d));
     ach = _ach('h'); g_strop_state.conversion_fun((const_char_info *)&achr, &(g_strop_state.fmt_letter_h));
     ach = _ach('s'); g_strop_state.conversion_fun((const_char_info *)&achr, &(g_strop_state.fmt_letter_s));
+    ach = _ach('-'); g_strop_state.conversion_fun((const_char_info *)&achr, &(g_strop_state.sign_minus));
 }
 
 // format uint64 number to string, put in buf starting from ptr, adjust ptr to point at the end of formatted value
@@ -281,3 +284,42 @@ sint8 strop_cmp(const uint8 *str1, const uint8 *str2)
 
 }
 */
+
+// format decimal value and put result to buf + start
+// return 0 on success, non-0 on error
+// start value updated to point after formatted date
+sint8 strop_fmt_decimal(uint8 *buf, uint32 *start, uint32 sz, decimal *q)
+{
+    uint32 ptr = (*start);
+    sint16 i = DECIMAL_PARTS-1;
+
+    // sign
+    if(q->sign == DECIMAL_SIGN_NEG)
+    {
+        if(sz - ptr < g_strop_state.sign_minus.length) return 1; // buf overflow
+        memcpy(buf + ptr, g_strop_state.sign_minus.chr, g_strop_state.sign_minus.length);
+        ptr += g_strop_state.sign_minus.length;
+    }
+
+    while(i >= 0 && 0 == q->m[i]) i--;  // first non-0 "digit"
+
+    if(i >= 0)
+    {
+        if(strop_fmt_uint64(buf, &ptr, sz, q->m[i]) != 0) return 1;
+        i--;
+        while(i >= 0)
+        {
+            if(strop_fmt_uint64_padded(buf, &ptr, sz, q->m[i], 4) != 0) return 1;
+            i--;
+        }
+    }
+    else
+    {
+        // zero
+        if(strop_fmt_uint64(buf, &ptr, sz, 0) != 0) return 1;
+    }
+
+    (*start) = ptr;
+
+    return 0;
+}

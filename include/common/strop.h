@@ -3,7 +3,9 @@
 
 // text string operations
 
+#include "defs/defs.h"
 #include "common/encoding.h"
+#include "common/decimal.h"
 
 // set current encoding
 void strop_set_encoding(encoding enc);
@@ -35,5 +37,10 @@ sint8 strop_fmt_uint64_padded(uint8* buf, uint32 *ptr, uint32 sz, uint64 number,
 //   mi:    minutes from 0 to 59
 //   ss:    seconds from 0 to 59
 sint8 strop_fmt_date(uint8 *buf, uint32 *start, uint32 bufsz, const achar* fmt, uint64 date);
+
+// format decimal value and put result to buf + start
+// return 0 on success, non-0 on error
+// start value updated to point after formatted date
+sint8 strop_fmt_decimal(uint8 *buf, uint32 *start, uint32 bufsz, decimal *d);
 
 #endif

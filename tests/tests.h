@@ -20,4 +20,7 @@ int test_dateop_functions();
 // test encoding functions
 int test_encoding_functions();
 
+// test decimal functions
+int test_decimal_functions();
+
 #endif

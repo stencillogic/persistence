@@ -1,12 +1,13 @@
 #include "common/error.h"
 
-#define ERROR_CODE_NUM 3
+#define ERROR_CODE_NUM 4
 
 achar *g_error_msg[] =
 {
     _ach("ECODE=00001: no error"),
     _ach("ECODE=00002: session initialization failed"),
-    _ach("ECODE=00003: protocol violation")
+    _ach("ECODE=00003: protocol violation"),
+    _ach("ECODE=00004: numeric overflow")
 };
 
 error_code g_current_error_code = 0;
