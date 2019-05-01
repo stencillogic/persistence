@@ -150,11 +150,11 @@ int test_encoding_functions()
     puts("Testing encoding names");
 
     const achar* encname;
-    for(int enc = 0; enc < ENCODING_NUM; enc++)
+    for(uint32 enc = 0; enc < ENCODING_NUM; enc++)
     {
         encname = encoding_name(enc);
         if(encname == NULL) return __LINE__*1000 + enc;
-        for(int enc2 = 0; enc2 < ENCODING_NUM; enc2++)
+        for(uint32 enc2 = 0; enc2 < ENCODING_NUM; enc2++)
         {
             if((enc2 != enc) && (strcmp(encname, encoding_name(enc2)) == 0)) return __LINE__*1000 + enc;
         }

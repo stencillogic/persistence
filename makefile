@@ -2,9 +2,9 @@ IDIR=include
 CC=gcc
 
 ifndef DEBUG
-CFLAGS=-I$(IDIR) -Wall -Wextra -m64 -O2 -U_DEBUG
+CFLAGS=-I$(IDIR) -Wall -Wextra -m64 -O2 -U_DEBUG 
 else
-CFLAGS=-I$(IDIR) -Wall -Wextra -m64 -O0 -g -D_DEBUG
+CFLAGS=-I$(IDIR) -Wall -Wextra -m64 -O0 -g -D_DEBUG 
 endif
 
 TGT_BUILD_DIR=target
