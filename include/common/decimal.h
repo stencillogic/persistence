@@ -5,15 +5,22 @@
 
 #include "defs/defs.h"
 
-#define DECIMAL_PARTS (10)
-#define DECIMAL_BASE  (10000)
-#define DECIMAL_SIGN_POS (1)
-#define DECIMAL_SIGN_NEG (-1)
+#define DECIMAL_PARTS           (10)
+#define DECIMAL_BASE_LOG10      (4)
+#define DECIMAL_POSITIONS       (DECIMAL_PARTS * DECIMAL_BASE_LOG10)
+#define DECIMAL_BASE            (10000)
+#define DECIMAL_SIGN_POS        (1)
+#define DECIMAL_SIGN_NEG        (-1)
+#define DECIMAL_MIN_EXPONENT    (-128)
+#define DECIMAL_MAX_EXPONENT    (127)
 
+// decimal representation for calculations
 typedef struct _decimal
 {
-    sint8  sign;
-    sint16 m[DECIMAL_PARTS];
+    sint8  sign;                // sign
+    sint8  e;                   // exponent
+    sint16 n;                   // number of decimal positions taken in mantissa
+    sint16 m[DECIMAL_PARTS];    // mantissa
 } decimal;
 
 // add two decimals: d3 = d1 + d2
@@ -35,5 +42,9 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3);
 // compare two decimals
 // return positive if d1 > d2, negative if d1 < d2, 0 otherwise
 sint16 decimal_cmp(const decimal *d1, const decimal *d2);
+
+void decimal_shift_right(sint16 *m, sint32 n);
+
+void decimal_shift_left(sint16 *m, sint32 n);
 
 #endif
