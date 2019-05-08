@@ -19,7 +19,7 @@ typedef struct _decimal
 {
     sint8  sign;                // sign
     sint8  e;                   // exponent
-    sint16 n;                   // number of decimal positions taken in mantissa
+    sint16 n;                   // number of decimal positions taken in mantissa excluding leading zeroes
     sint16 m[DECIMAL_PARTS];    // mantissa
 } decimal;
 
@@ -42,9 +42,5 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3);
 // compare two decimals
 // return positive if d1 > d2, negative if d1 < d2, 0 otherwise
 sint16 decimal_cmp(const decimal *d1, const decimal *d2);
-
-void decimal_shift_right(sint16 *m, sint32 n);
-
-void decimal_shift_left(sint16 *m, sint32 n);
 
 #endif

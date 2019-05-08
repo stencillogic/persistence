@@ -271,9 +271,9 @@ sint8 decimal_mul(const decimal *d1, const decimal *d2, decimal *d3)
 sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
 {
     // Knuth's division
-    sint32 d, c, j, n, m, e, qh, l, k, rh;
+    sint32 d, c, i, j, n, m, e, qh, l, k, rh, p;
     sint16 buf[DECIMAL_PARTS * 3 + 3], v1, v2;
-    sint16 *n1 = buf + 2, *n2 = buf + DECIMAL_PARTS * 2 + 3, *n1j;
+    sint16 *n1 = buf + 2 + DECIMAL_PARTS, *n2 = buf + DECIMAL_PARTS * 2 + 3, *n1j;
 
     if(d2->n == 0)
     {
@@ -292,39 +292,41 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
     }
     m = (d1->n - 1) / DECIMAL_BASE_LOG10;
 
-    j = DECIMAL_PARTS - 1;
+    i = DECIMAL_PARTS - 1;
+    p = 1;
 
     if(n == 0)
     {
         // division by single digit
         d = *(d2->m);
         rh = 0;
-        k = m;
-        if(d1->m[k] < d)
+        j = m;
+        if(d1->m[j] < d)
         {
-            rh = d1->m[k];
-            k--;
+            rh = d1->m[j];
+            j--;
+            p--;
         }
 
-        while(j >= 0)
+        while(i >= 0)
         {
-            qh = rh * DECIMAL_BASE + ((k >= 0) ? d1->m[k] : 0);
+            qh = rh * DECIMAL_BASE + ((j >= 0) ? d1->m[j] : 0);
             rh = qh % d;
-            d3->m[j] = qh / d;
+            d3->m[i] = qh / d;
 
-            if(rh == 0 && k <= 0)
+            if(rh == 0 && j <= 0)
             {
                 break;
             }
 
-            k--;
             j--;
+            i--;
         }
 
-        while(j > 0)
+        while(i > 0)
         {
-            j--;
-            d3->m[j] = 0;
+            i--;
+            d3->m[i] = 0;
         }
     }
     else
@@ -336,18 +338,18 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
 
         if(d == 1)
         {
-            memcpy(n1 + DECIMAL_PARTS - m - 1, d1->m, sizeof(d1->m));
+            memcpy(n1, d1->m, sizeof(d1->m));
             memcpy(n2, d2->m, sizeof(d2->m));
         }
         else
         {
-            decimal_mul_by_digit(d1->m, d, n1 + DECIMAL_PARTS - m - 1);
+            decimal_mul_by_digit(d1->m, d, n1);
             decimal_mul_by_digit(d2->m, d, n2);
         }
 
         v1 = n2[n];
         v2 = n2[n - 1];
-
+/*
         if(n1[j + n + 1] * DECIMAL_BASE + n1[j + n] < v1)
         {
             n1--;
@@ -356,7 +358,8 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
                 n1--;
             }
         }
-
+*/
+        j = m - n;
         do
         {
             n1j = n1 + j;
@@ -364,7 +367,7 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
             rh = qh % v1;
             qh /= v1;
 
-            if(qh >= DECIMAL_BASE || (qh * v2 > DECIMAL_BASE * rh + n1j[n - 1]))
+            if(qh >= DECIMAL_BASE || (qh * v2 > DECIMAL_BASE * rh + n1j[n-1]))
             {
                 qh--;
                 rh += v1;
@@ -393,12 +396,10 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
                 }
             }
 
-            d3->m[j] = qh;
-
             if(c > 0)
             {
                 // compensate
-                d3->m[j]--;
+                qh--;
                 for(l = c = 0; l <= n + 1; l++)
                 {
                     n1j[l] += n2[l] + c;
@@ -415,9 +416,19 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
                 assert(c > 0);
             }
 
+            if(i < DECIMAL_PARTS - 1 || qh > 0)
+            {
+                d3->m[i] = qh;
+                i--;
+            }
+            else
+            {
+                p--;
+            }
+
             j--;
         }
-        while(j >= 0);
+        while(i>=0 && n1 + j > buf);
     }
 
     // exponent
@@ -429,7 +440,7 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3)
         j++;
     }
 
-    e = (sint32)d1->e - (sint32)d2->e - (DECIMAL_PARTS - m + n - (d1->m[m] >= d2->m[n] ? 1 : 0)) * DECIMAL_BASE_LOG10;
+    e = (sint32)d1->e - (sint32)d2->e - (DECIMAL_PARTS - m + n - p) * DECIMAL_BASE_LOG10;
 
     if(e > DECIMAL_MAX_EXPONENT || e < DECIMAL_MIN_EXPONENT)
     {

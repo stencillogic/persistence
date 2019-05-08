@@ -704,14 +704,13 @@ int test_decimal_functions()
     d1.e = DECIMAL_MAX_EXPONENT;
     d2.e = DECIMAL_MAX_EXPONENT;
     d1.n = d2.n = 8;
-    for(int i = 0; i < DECIMAL_PARTS - 2; i++)
+    for(int i = 0; i < DECIMAL_PARTS - 1; i++)
     {
-        ref.m[i] = (i % 2 > 0) ? 9998 : 4999;
+        ref.m[i] = (i % 2 == 0) ? 9998 : 4999;
     }
-    ref.m[DECIMAL_PARTS - 2] = 9999;
-    ref.m[DECIMAL_PARTS - 1] = 0;
-    ref.n = 36;
-    ref.e = -36;
+    ref.m[DECIMAL_PARTS - 1] = 9999;
+    ref.n = 40;
+    ref.e = -40;
     memset(d3.m, 123, sizeof(d3.m)); d3.sign = DECIMAL_SIGN_NEG; d3.e = 123; d3.n = 123;
     if(decimal_div(&d1, &d2, &d3) != 0) return __LINE__;
     if(decimal_cmp(&d3, &ref) != 0) return __LINE__;
@@ -730,18 +729,18 @@ int test_decimal_functions()
     d2.m[1] = 6666;
     d2.m[0] = 9999;
     d2.n = 12;
-    ref.m[9] = 0;
-    ref.m[8] = 9999;
-    ref.m[7] = 9998;
-    ref.m[6] = 5001;
-    ref.m[5] = 5000;
-    ref.m[4] = 7497;
-    ref.m[3] = 1;
-    ref.m[2] = 8752;
-    ref.m[1] = 6244;
-    ref.m[0] = 5626;
-    ref.n = 36;
-    ref.e = -28;
+    ref.m[9] = 9999;
+    ref.m[8] = 9998;
+    ref.m[7] = 5001;
+    ref.m[6] = 5000;
+    ref.m[5] = 7497;
+    ref.m[4] = 1;
+    ref.m[3] = 8752;
+    ref.m[2] = 6244;
+    ref.m[1] = 5626;
+    ref.m[0] = 5006;
+    ref.n = 40;
+    ref.e = -32;
     memset(d3.m, 123, sizeof(d3.m)); d3.sign = DECIMAL_SIGN_NEG; d3.e = 123; d3.n = 123;
     if(decimal_div(&d1, &d2, &d3) != 0) return __LINE__;
     if(decimal_cmp(&d3, &ref) != 0) return __LINE__;
