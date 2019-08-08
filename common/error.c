@@ -1,6 +1,6 @@
 #include "common/error.h"
 
-#define ERROR_CODE_NUM 5
+#define ERROR_CODE_NUM 6
 
 achar *g_error_msg[] =
 {
@@ -8,7 +8,8 @@ achar *g_error_msg[] =
     _ach("ECODE=00002: session initialization failed"),
     _ach("ECODE=00003: protocol violation"),
     _ach("ecode=00004: numeric overflow"),
-    _ach("ecode=00005: division by zero")
+    _ach("ecode=00005: division by zero"),
+    _ach("ecode=00006: invalid decimal format")
 };
 
 error_code g_current_error_code = 0;

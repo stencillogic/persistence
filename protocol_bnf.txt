@@ -37,32 +37,25 @@ Interaction protocol description
     <data_type_scale> ::= 1-byte value of data type scale
     <col_alias> ::= <text_string>
 
-    <recordset_row> ::= <recordset_row_magic> { <cell_value> }
+    <recordset_row> ::= <recordset_row_magic> <recordset_row_header> { <cell_value> }
     <recordset_row_magic> ::= 0x06
-    <cell_value> ::= <text_string> | <numeric_value> | <timestamp_value> | <smallint_value> | <integer_value> | <float_value> | <double_precision_value> | <date_value>
-    <numeric_value> ::= <numeric_value_magic> [ <numeric_value_value> ]
-    <timestamp_value> ::= <timestamp_value_magic> [ <timestamp_value_value> ]
-    <smallint_value> ::= <smallint_value_magic> [ <smallint_value_value> ]
-    <integer_value> ::= <integer_value_magic> [ <integer_value_value> ]
-    <float_value> ::= <float_value_magic> [ <float_value_value> ]
-    <double_precision_value> ::= <double_precision_value_magic> [ <double_precision_value_value> ]
-    <date_value> ::= <date_value_magic> [ <date_value_value> ]
-
-    <numeric_value_magic> ::= 0x02
-    <timestamp_value_magic> ::= 0x08
-    <smallint_value_magic> ::= 0x04
-    <integer_value_magic> ::= 0x03
-    <float_value_magic> ::= 0x05
-    <double_precision_value_magic> ::= 0x06
-    <date_value_magic> ::= 0x07
-
-    <numeric_value_value> ::= bytes representing numeric value
-    <timestamp_value_value> ::= uint64 value of microseconds
-    <smallint_value_value> ::= sint16 value
-    <integer_value_value> ::= sint32 value
-    <float_value_value> ::= float32 value
-    <double_precision_value_value> ::= float64 value
-    <date_value_value> ::= uint64 value of seconds
+    <recordset_row_header> ::= 0x00 | <nulls_bitmask>
+    <nulls_bitmask> ::= first bit is 1, othe bits correspond to null values (0) or not null values (1)
+    <cell_value> ::= <text_string> | <numeric_value> | <timestamp_value> | <timestamp_with_tz_value> | <smallint_value> | <integer_value> | <float_value> | <double_precision_value> | <date_value> | <null_value>
+    <numeric_value> ::= bytes representing serialized numeric value: 
+        1st byte:
+            1st bit - decimal sign (0 - positive, 1 - negative)
+            2nd bit - set if exponent part is present
+            remaining bits - mantissa length in bytes
+        other bytes: 
+            mantissa bytes, uint8 sequence
+    <timestamp_value> ::= uint64 value of microseconds in network order
+    <timestamp_with_tz_value> ::= uint64 value of microseconds in network order, sint16 timezone minutes in network order
+    <smallint_value> ::= sint16 value in network order
+    <integer_value> ::= sint32 value in network order
+    <float_value> ::= float32 value in network order
+    <double_precision_value> ::= float64 value in network order
+    <date_value> ::= uint64 value of seconds in network order
 
     <recordset_end> ::= 0x88
 

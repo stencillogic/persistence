@@ -5,7 +5,9 @@
 
 #include "common/encoding.h"
 #include "common/error.h"
+#include "table/table.h"
 #include "auth/auth.h"
+#include "common/decimal.h"
 
 #define PPROTO_MAJOR_VERSION 0x0001u
 #define PPROTO_MINOR_VERSION 0x0001u
@@ -46,6 +48,7 @@
 #define PPROTO_SQL_REQUEST_MESSAGE_MAGIC 0x55u
 #define PPROTO_CANCEL_MESSAGE_MAGIC 0x57u
 
+
 typedef enum _pproto_msg_type
 {
     PPROTO_MSG_TYPE_ERR = -1,
@@ -65,22 +68,36 @@ typedef enum _pproto_msg_type
     PPROTO_GOODBYE_MSG = 13
 } pproto_msg_type;
 
-typedef struct _pproto_recordset_desc
+
+// recordset description
+typedef struct _pproto_col_desc
 {
-    uint16 col_num;
-    struct pproto_col_desc
-    {
-        uint8               data_type_precision;
-        uint8               data_type_scale;
-        uint16              col_alias_sz;
-        column_data_type    data_type;
-        uint64              data_type_len;
-        alias               col_alias[MAX_TABLE_COL_NAME_LEN];
-    } *cols;
-} pproto_recordset_desc;
+    uint8               data_type_precision;
+    uint8               data_type_scale;
+    uint16              col_alias_sz;
+    column_datatype     data_type;
+    uint64              data_type_len;
+    uint8               col_alias[MAX_TABLE_COL_NAME_LEN];
+} pproto_col_desc;
+
 
 // set socket to work with
 void pproto_set_sock(int client_sock);
+
+
+// read column descriptor in recordset
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_recordset_col_desc(pproto_col_desc *col_desc);
+
+// read number of columns in recordset
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_recordset_col_num(uint16 *n);
+
+// begin reading row in recordset
+// fills bitmap "nulls" with null value mask (0 - value is null for column, 1 - value is present)
+// return 0 if no rows present anymore, 1 if there is row, -1 on error
+sint8 pproto_recordset_start_row(uint8 *nulls);
+
 
 // initiate string read
 // return 0 on success, non 0 otherwise
@@ -91,28 +108,37 @@ sint8 pproto_read_str_begin();
 // return 0 on success, non 0 otherwise
 sint8 pproto_read_str(uint8 *strbuf, uint32 *sz);
 
-sint8 pproto_send_success_message_with_text();
+// read date value
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_date_value(uint64 *date);
 
-sint8 pproto_send_success_message_without_text();
+// read decimal value
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_decimal_value(decimal *d);
 
-sint8 pproto_send_recordset();
+// read 8-byte float value
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_double_value(float64 *d);
 
-sint8 pproto_send_recordset_row();
+// read 4-byte float value
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_float_value(float32 *f);
 
-sint8 pproto_send_numeric_value();
+// read 4-byte integer
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_integer_value(sint32 *i);
 
-sint8 pproto_send_timestamp_value();
+// read 2-byte integer
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_smallint_value(sint16 *s);
 
-sint8 pproto_send_smallint_value();
+// read timestamp value
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_timestamp_value(uint64 *ts);
 
-sint8 pproto_send_integer_value();
-
-sint8 pproto_send_float_value();
-
-sint8 pproto_send_double_precision_value();
-
-sint8 pproto_send_date_value();
-
+// read timestamp with timezone value
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_timestamp_with_tz_value(uint64 *ts, sint16 *tz);
 
 // return next message type or -1 on error
 pproto_msg_type pproto_read_msg_type();

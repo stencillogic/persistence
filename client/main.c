@@ -2,6 +2,8 @@
 
 #include "defs/defs.h"
 #include "client/pproto_client.h"
+#include "common/strop.h"
+#include "common/error.h"
 #include <stdio.h>
 #include <getopt.h>
 #include <stdlib.h>
@@ -12,38 +14,54 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-#define CLIENT_SQL_STATEMENT_DELIMITER ";"
-#define CLIENT_PASSWORD_MAX_LEN 1024
-#define CLIENT_STRBUF_SZ 8192
 
-#define CLIENT_MAX_COL_STR_LEN          256
-#define CLIENT_MAX_COL_DECIMAL_LEN      40
-#define CLIENT_MAX_COL_INTEGER_LEN      10
-#define CLIENT_MAX_COL_SMALLINT_LEN     5
-#define CLIENT_MAX_COL_FLOAT_LEN        10
-#define CLIENT_MAX_COL_DOUBLE_PRECISION_LEN  15
-#define CLIENT_MAX_COL_DATE_LEN         50
-#define CLIENT_MAX_COL_TIMESTAMP_LEN    50
+#define CLIENT_ENCODING_ENVVAR          ("PSQLENC")
+#define CLIENT_SQL_STATEMENT_DELIMITER  (';')
+#define CLIENT_PROGRESS_CHAR            ('.')
+#define CLIENT_PASSWORD_MAX_LEN         (1024)
+#define CLIENT_RS_PADDING               (1)
+#define CLIENT_MAX_COLUMNS              (1024)
+#define CLIENT_MAX_VALUE_LEN            (256)
+#define CLIENT_STRBUF_SZ                (CLIENT_MAX_VALUE_LEN * 32)
 
-char    *user = 0;
-char    *password = 0;
-char    *host = "localhost";
-int     port = SERVER_DEFAULT_PORT;
-int     p_option_present = 0;
-char    password_buf[CLIENT_PASSWORD_MAX_LEN];
-uint8   stmt_delimiter = CLIENT_SQL_STATEMENT_DELIMITER;
-uint8   stmt_delimiter_len = 1;
+#define CLIENT_DEFAULT_DECIMAL_FMT      ("dsdddddde")
+#define CLIENT_DEFAULT_INTEGER_FMT      ("dddddddddd")
+#define CLIENT_DEFAULT_SMALLINT_FMT     ("ddddd")
+#define CLIENT_DEFAULT_FLOAT_FMT        ("dsdddddde")
+#define CLIENT_DEFAULT_DOUBLE_FMT       ("dsdddddddddddde")
+#define CLIENT_DEFAULT_DATE_FMT         ("yyyy-mm-dd hh:mi:ss")
+#define CLIENT_DEFAULT_TS_FMT           ("yyyy-mm-dd hh:mi:ss.tttttt")
+#define CLIENT_DEFAULT_TS_WITH_TZ_FMT   ("yyyy-mm-dd hh:mi:ss.tttttt+tz")
+
+#define CLIENT_DEFAULT_STR_LEN                  (32)
+#define CLIENT_DEFAULT_DECIMAL_LEN              (14)
+#define CLIENT_DEFAULT_INTEGER_LEN              (10)
+#define CLIENT_DEFAULT_SMALLINT_LEN             (5)
+#define CLIENT_DEFAULT_FLOAT_LEN                (14)
+#define CLIENT_DEFAULT_DOUBLE_LEN               (21)
+#define CLIENT_DEFAULT_DATE_LEN                 (19)
+#define CLIENT_DEFAULT_TIMESTAMP_LEN            (26)
+#define CLIENT_DEFAULT_TIMESTAMP_WITH_TZ_LEN    (32)
+
+
+char       *user = 0;
+char       *password = 0;
+char       *host = "localhost";
+int         port = SERVER_DEFAULT_PORT;
+int         p_option_present = 0;
+char        password_buf[CLIENT_PASSWORD_MAX_LEN];
+uint8       stmt_delimiter = CLIENT_SQL_STATEMENT_DELIMITER;
 const char *prompt = "ptool> ";
-uint8   strbuf[CLIENT_STRBUF_SZ];
+uint8       strbuf[CLIENT_STRBUF_SZ];
+char        decimal_separator = '.';
+uint8       nulls[128];
+encoding    client_enc;
 
-uint32  col_str_len = CLIENT_MAX_COL_STR_LEN;
-uint32  col_decimal_len = CLIENT_MAX_COL_DECIMAL_LEN;
-uint32  col_integer_len = CLIENT_MAX_COL_INTEGER_LEN;
-uint32  col_smallint_len = CLIENT_MAX_COL_SMALLINT_LEN;
-uint32  col_float_len = CLIENT_MAX_COL_FLOAT_LEN;
-uint32  col_double_len = CLIENT_MAX_COL_DOUBLE_PRECISION_LEN;
-uint32  col_date_len = CLIENT_MAX_COL_DATE_LEN;
-uint32  col_ts_len = CLIENT_MAX_COL_TIMESTAMP_LEN;
+struct rs_columns
+{
+    uint32 width;
+    pproto_col_desc desc;
+} g_rs_columns[CLIENT_MAX_COLUMNS];
 
 typedef struct _char_state
 {
@@ -53,6 +71,42 @@ typedef struct _char_state
     size_t linelen;
 } char_state;
 
+union _value_buf
+{
+    decimal d;
+    sint32  i;
+    sint16  s;
+    float32 f32;
+    float64 f64;
+    uint64  dt;
+    uint64  ts;
+    struct
+    {
+        uint64 ts;
+        sint16 tz;
+    } ts_with_tz;
+} value_buf;
+
+void init()
+{
+    const char *encname = getenv(CLIENT_ENCODING_ENVVAR);
+    if(NULL != encname)
+    {
+        client_enc = encoding_idbyname(encname);
+        if(client_enc == ENCODING_UNKNOWN)
+        {
+            printf("Value \"%s\" of environment variable %s is not recognized encoding name, ASCII will be used as default encoding\n", encname, CLIENT_ENCODING_ENVVAR);
+            client_enc = ENCODING_ASCII;
+        }
+    }
+    else
+    {
+        printf("%s environment variable is not set, ASCII will be used as default encoding\n", CLIENT_ENCODING_ENVVAR);
+        client_enc = ENCODING_ASCII;
+    }
+    encoding_init();
+    strop_set_encoding(client_enc);
+}
 
 void usage(FILE* fp)
 {
@@ -151,56 +205,50 @@ void parse_args(int argc, char **argv)
 // convert socket error code to string
 const char* herrno_msg()
 {
-	switch(h_errno)
-	{
-		case HOST_NOT_FOUND:
-      		return "host is unknown";
+    switch(h_errno)
+    {
+        case HOST_NOT_FOUND:
+              return "host is unknown";
         case NO_DATA:
-			return "requested name does not have an IP address";
+            return "requested name does not have an IP address";
         case NO_RECOVERY:
-			return "an nonrecoverable name server error occurred";
-		case TRY_AGAIN:
-			return "a temporary error, try again later";
-	}
-	return "unkonwn error";
+            return "an nonrecoverable name server error occurred";
+        case TRY_AGAIN:
+            return "a temporary error, try again later";
+    }
+    return "unkonwn error";
 }
 
 int make_connection()
 {
     int sock;
-  	struct sockaddr_in name;
-	struct hostent *hostinfo;
+    struct sockaddr_in name;
+    struct hostent *hostinfo;
 
-  	sock = socket(PF_INET, SOCK_STREAM, 0);
-	if(sock < 0)
+    sock = socket(PF_INET, SOCK_STREAM, 0);
+    if(sock < 0)
     {
-      	perror("Creating socket");
-      	exit(1);
+          perror("Creating socket");
+          exit(1);
     }
 
-  	name.sin_family = AF_INET;
+      name.sin_family = AF_INET;
     name.sin_port = htons(port);
     hostinfo = gethostbyname(host);
     if(NULL == hostinfo)
     {
-    	fprintf(stderr, "Host name resolution: %s.\n", herrno_msg());
+        fprintf(stderr, "Host name resolution: %s.\n", herrno_msg());
         exit(1);
     }
     name.sin_addr = *(struct in_addr *)hostinfo->h_addr;
 
-	if(-1 == connect(sock, (struct sockaddr*)&name, sizeof(name)))
-	{
-		perror("Connecting");
-		exit(1);
-	}
+    if(-1 == connect(sock, (struct sockaddr*)&name, sizeof(name)))
+    {
+        perror("Connecting");
+        exit(1);
+    }
 
-	return sock;
-}
-
-encoding client_encoding()
-{
-    // TODO: determine encoding
-    return ENCODING_UTF8;
+    return sock;
 }
 
 // read next char from stdin
@@ -223,58 +271,145 @@ char next_char(char_state *chst)
     return *(chst->lineptr++);
 }
 
-void process_server_error(errcode)
+void process_server_error(error_code errcode)
 {
-    frpintf(stderr, "Error from server: %s\n", error_msg(errcode));
+    fprintf(stderr, "Error from server: %s\n", error_msg(errcode));
     fflush(stderr);
 }
 
 // calculate output column width
-uint32 calc_col_width(struct pproto_col_desc *cd)
+uint32 calc_col_width(const pproto_col_desc *cd)
 {
     uint32 w = cd->col_alias_sz;
     switch(cd->data_type)
     {
         case CHARACTER_VARYING:
             if(w < cd->data_type_len) w = cd->data_type_len;
-            if(w > col_str_len) w = col_str_len;
             break;
         case DECIMAL:
-            if(w < cd->data_type_precision + sizeof(decimal_separator)) w = cd->data_type_precision + sizeof(decimal_separator);
-            if(w > col_decimal_len) w = col_decimal_len;
+            if(cd->data_type_precision > 0)
+            {
+                if(w < cd->data_type_precision + sizeof(decimal_separator))
+                {
+                    w = cd->data_type_precision + sizeof(decimal_separator);
+                }
+            }
+            else
+            {
+                w = CLIENT_DEFAULT_DECIMAL_LEN;
+            }
             break;
         case INTEGER:
-            if(w < 10) w = 10;
-            if(w > col_integer_len) w = col_integer_len;
+            if(w < CLIENT_DEFAULT_INTEGER_LEN) w = CLIENT_DEFAULT_INTEGER_LEN;
             break;
         case SMALLINT:
-            if(w < 5) w = 5;
-            if(w > col_smallint_len) w = col_smallint_len;
+            if(w < CLIENT_DEFAULT_SMALLINT_LEN) w = CLIENT_DEFAULT_SMALLINT_LEN;
             break;
         case FLOAT:
-            if(w < 10) w = 10;
-            if(w > col_float_len) w = col_float_len;
+            if(w < CLIENT_DEFAULT_FLOAT_LEN) w = CLIENT_DEFAULT_FLOAT_LEN;
             break;
         case DOUBLE_PRECISION:
-            if(w < 15) w = 15;
-            if(w > col_double_len) w = col_double_len;
+            if(w < CLIENT_DEFAULT_DOUBLE_LEN) w = CLIENT_DEFAULT_DOUBLE_LEN;
             break;
-        case DATE:  // yyyy-mm-dd hh:mi:ss
-            if(w < 50) w = 50;
-            if(w > col_date_len) w = col_date_len;
+        case DATE:
+            if(w < CLIENT_DEFAULT_DATE_LEN) w = CLIENT_DEFAULT_DATE_LEN;
             break;
-        case TIMESTAMP: // yyyy-mm-dd hh:mi:ss.tttttt+tz
-            if(w < 50) w = 50;
-            if(w > col_ts_len) w = col_ts_len;
+        case TIMESTAMP:
+            if(w < CLIENT_DEFAULT_TIMESTAMP_LEN) w = CLIENT_DEFAULT_TIMESTAMP_LEN;
+            break;
+        case TIMESTAMP_WITH_TZ:
+            if(w < CLIENT_DEFAULT_TIMESTAMP_WITH_TZ_LEN) w = CLIENT_DEFAULT_TIMESTAMP_WITH_TZ_LEN;
             break;
     }
-    return w;
+
+    if(w > CLIENT_MAX_VALUE_LEN) w = CLIENT_MAX_VALUE_LEN;
+
+    return w + 2 * CLIENT_RS_PADDING;
 }
 
-void get_and_print_recordset()
+void table_print_separator(uint16 col_num)
+{
+    fputc(' ', stdout);
+    for(uint16 c = 0; c < col_num; c++)
+    {
+        strbuf[0] = '+';
+        memset(strbuf + 1, '-', g_rs_columns[c].width);
+        strbuf[g_rs_columns[c].width + 1] = '\0';
+        fputs((const char*)strbuf, stdout);
+    }
+    fputs("+\n", stdout);
+}
+
+void table_print_cell(uint8 *value, uint32 w, uint32 c)
+{
+    fputs(" | ", stdout);
+    fprintf(stdout, "\e[s");
+    if(w + 2 * CLIENT_RS_PADDING > g_rs_columns[c].width) w = g_rs_columns[c].width - 2 * CLIENT_RS_PADDING;
+    fwrite(value, w, 1, stdout);
+    fprintf(stdout, "\e[u\e");
+}
+
+void table_finish_row()
+{
+    fputs(" |\n", stdout);
+}
+
+
+sint8 read_and_format_value(uint16 c)
+{
+    uint32 sz = 0;
+    switch(g_rs_columns[c].desc.data_type)
+    {
+        case CHARACTER_VARYING:
+            if(pproto_read_str_begin() != 0) return 1;
+            sz = g_rs_columns[c].width;
+            if(pproto_read_str(strbuf, &sz) != 0) return 1;    // aborting if error
+            break;
+        case DECIMAL:
+            if(pproto_read_decimal_value(&value_buf.d) != 0) return 1;
+            if(strop_fmt_decimal_pse(strbuf, &sz, CLIENT_STRBUF_SZ, g_rs_columns[c].desc.data_type_precision, g_rs_columns[c].desc.data_type_scale, 0, &value_buf.d) != 0) return 1;
+            break;
+        case INTEGER:
+            if(pproto_read_integer_value(&value_buf.i) != 0) return 1;
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%11d", value_buf.i);
+            break;
+        case SMALLINT:
+            if(pproto_read_smallint_value(&value_buf.s) != 0) return 1;
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%6d", value_buf.s);
+            break;
+        case FLOAT:
+            if(pproto_read_float_value(&value_buf.f32) != 0) return 1;
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%1.6e", value_buf.f32);
+            break;
+        case DOUBLE_PRECISION:
+            if(pproto_read_double_value(&value_buf.f64) != 0) return 1;
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%1.12e", value_buf.f64);
+            break;
+        case DATE:
+            if(pproto_read_date_value(&value_buf.dt) != 0) return 1;
+            if(strop_fmt_date(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_DATE_FMT, value_buf.dt) != 0) return 1;
+            break;
+        case TIMESTAMP:
+            if(pproto_read_timestamp_value(&value_buf.ts) != 0) return 1;
+            if(strop_fmt_timestamp(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_TS_FMT, value_buf.ts) != 0) return 1;
+            break;
+        case TIMESTAMP_WITH_TZ:
+            if(pproto_read_timestamp_with_tz_value(&value_buf.ts_with_tz.ts, &value_buf.ts_with_tz.tz) != 0) return 1;
+            if(strop_fmt_timestamp_with_tz(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_TS_WITH_TZ_FMT, value_buf.ts_with_tz.ts, value_buf.ts_with_tz.tz) != 0) return 1;
+            break;
+    }
+    return 0;
+}
+
+sint8 get_and_print_recordset()
 {
     pproto_msg_type msg_type = pproto_read_msg_type();
     error_code errcode;
+    uint16 col_num, c;
+    uint32 sz;
+    sint8  status;
+    pproto_col_desc col_desc;
+
     switch(msg_type)
     {
         case PPROTO_MSG_TYPE_ERR:
@@ -286,10 +421,10 @@ void get_and_print_recordset()
             if(pproto_read_str_begin() != 0) return 1;
             do
             {
-                sz = STRBUF_SZ;
+                sz = CLIENT_STRBUF_SZ;
                 if(pproto_read_str(strbuf, &sz) != 0) return 1;    // aborting if error
                 fwrite(strbuf, 1, sz, stdout);
-            } while(sz == STRBUF_SZ);
+            } while(sz == CLIENT_STRBUF_SZ);
             fputc('\n', stdout);
             fflush(stdout);
             break;
@@ -298,14 +433,60 @@ void get_and_print_recordset()
             fflush(stdout);
             break;
         case PPROTO_RECORDSET_MSG:
-            if(pproto_read_recordset_descriptor(&rs_descriptor) != 0) return 1;
-            for(uint16 c = 0; c < rs_descriptor.col_num; c++)
+            //
+            // +-------------+-------------+
+            // | col alias 1 | col alias 2 | ...
+            // +-------------+-------------+
+            // | val1        | val 2       | ...
+            // | val3        | val 4       | ...
+            // +-------------+-------------+
+            //
+            if(pproto_read_recordset_col_num(&col_num) != 0) return 1;
+
+            if(col_num > CLIENT_MAX_COLUMNS)
             {
-                col_width = calc_col_width(col + c);
+                fprintf(stderr, "recordset continas more than %d columns. This client supports only %d columns.\n", CLIENT_MAX_COLUMNS, CLIENT_MAX_COLUMNS);
+                col_num = CLIENT_MAX_COLUMNS;
             }
+
+            fputs("\n ", stdout);
+            for(c = 0; c < col_num; c++)
+            {
+                if(pproto_read_recordset_col_desc(&col_desc) != 0) return 1;
+                g_rs_columns[c].desc = col_desc;
+                g_rs_columns[c].width = calc_col_width(&col_desc);
+            }
+
+            // table heading
+            table_print_separator(col_num);
+            for(c = 0; c < col_num; c++)
+            {
+                table_print_cell(g_rs_columns[c].desc.col_alias, g_rs_columns[c].desc.col_alias_sz, c);
+            }
+            table_finish_row();
+            table_print_separator(col_num);
+
+            // table body
+            status = pproto_recordset_start_row(nulls);
+            while(status)
+            {
+                if(status == -1) return 1;
+
+                for(c = 0; c < col_num; c++)
+                {
+                    sz = CLIENT_MAX_VALUE_LEN;
+                    read_and_format_value(c);
+                    table_print_cell(strbuf, sz, c);
+                }
+                table_finish_row();
+
+                status = pproto_recordset_start_row(nulls);
+            }
+            table_print_separator(col_num);
+
             break;
         case PPROTO_PROGRESS_MSG:
-            // TODO: display progress
+            fputc(CLIENT_PROGRESS_CHAR, stdout);
             break;
         default:
             fprintf(stderr, "Unexpected message type from server: %x\n", msg_type);
@@ -318,6 +499,7 @@ void get_and_print_recordset()
 int main(int argc, char **argv)
 {
     puts("=== Persistence command line tool v0.1 ===");
+    init();
     parse_args(argc, argv);
 
     if(0 == user)
@@ -350,7 +532,7 @@ int main(int argc, char **argv)
             exit(1);
         }
 
-        if(0 != fgets(password_buf, PASSWORD_MAX_LEN, stdin))
+        if(0 != fgets(password_buf, CLIENT_PASSWORD_MAX_LEN, stdin))
         {
             password_buf[strlen(password_buf)-1] = '\0';
             password = password_buf;
@@ -363,7 +545,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if(strlen(user) > AUTH_USER_NAME_SZ-ENCODING_MAXCHAR_LEN)
+    if(strlen(user) > AUTH_USER_NAME_SZ - ENCODING_MAXCHAR_LEN)
     {
         fprintf(stderr, "User name %s is too long\n", user);
         exit(1);
@@ -381,7 +563,7 @@ int main(int argc, char **argv)
 
     int sock = make_connection();
     pproto_set_sock(sock);
-    encoding enc = client_encoding();
+    encoding enc = client_enc;
 
     if(pproto_send_client_hello(enc) != 0) exit(1);
 
@@ -418,7 +600,7 @@ int main(int argc, char **argv)
             case PCLIENT_STATE_READ_ERR_AND_EXIT: // read error and exit
                 if(pproto_read_error(&errcode) == 0)
                 {
-                    frpintf(stderr, "Error from server: %s\n", error_msg(errcode));
+                    fprintf(stderr, "Error from server: %s\n", error_msg(errcode));
                 }
                 aborted = 1;
                 break;
@@ -428,7 +610,7 @@ int main(int argc, char **argv)
                 break;
             case PCLIENT_STATE_AUTH: // read server auth
                 msg_type = pproto_read_msg_type();
-                if(msg_type == PPROTO_PPROTO_MSG_TYPE_ERR)
+                if(msg_type == PPROTO_MSG_TYPE_ERR)
                 {
                     state = PCLIENT_STATE_READ_ERR_AND_EXIT;
                 }
@@ -455,7 +637,7 @@ int main(int argc, char **argv)
                 break;
             case PCLIENT_STATE_AUTH_RESPONCE: // read auth responce
                 msg_type = pproto_read_msg_type();
-                if(msg_type == PPROTO_PPROTO_MSG_TYPE_ERR)
+                if(msg_type == PPROTO_MSG_TYPE_ERR)
                 {
                     state = PCLIENT_STATE_READ_ERR_AND_EXIT;
                 }
@@ -499,7 +681,7 @@ int main(int argc, char **argv)
 
                     if(in_string == 0 && in_comment == 0)
                     {
-                        if(ch == ';')
+                        if(ch == stmt_delimiter)
                         {
                             // statement completed
                             if(pproto_sql_stmt_finish() != 0)
@@ -530,7 +712,7 @@ int main(int argc, char **argv)
                     }
 
                     // send statement char to server
-                    if(pproto_send_sql_stmt(&ch, sizeof(char)) != 0)
+                    if(pproto_send_sql_stmt((const uint8 *)&ch, sizeof(char)) != 0)
                     {
                         aborted = 1;
                     }

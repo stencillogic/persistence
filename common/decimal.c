@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <string.h>
 
+
 // add abs values of two decimals: d3 = d1 + d2
 // return 0 if no carry outside of d3, 1 otherwise
 inline sint8 decimal_abs_add(const sint16 *d1, const sint16 *d2, sint16 *d3)
@@ -620,3 +621,4 @@ sint16 decimal_cmp(const decimal *d1, const decimal *d2)
 
     return decimal_abs_cmp(d1->m, d2->m) * d1->sign;
 }
+

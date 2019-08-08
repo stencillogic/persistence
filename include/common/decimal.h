@@ -43,4 +43,5 @@ sint8 decimal_div(const decimal *d1, const decimal *d2, decimal *d3);
 // return positive if d1 > d2, negative if d1 < d2, 0 otherwise
 sint16 decimal_cmp(const decimal *d1, const decimal *d2);
 
+
 #endif
