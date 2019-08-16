@@ -54,7 +54,7 @@ typedef enum _pproto_msg_type
     PPROTO_MSG_TYPE_ERR = -1,
     PPROTO_UNKNOWN_MSG = 0,
     PPROTO_SERVER_HELLO_MSG = 1,
-    PPROTO_ERROR_MSG_MSG = 2,
+    PPROTO_ERROR_MSG = 2,
     PPROTO_SUCCESS_WITH_TEXT_MSG = 3,
     PPROTO_SUCCESS_WITHOUT_TEXT_MSG = 4,
     PPROTO_RECORDSET_MSG = 5,
@@ -72,6 +72,7 @@ typedef enum _pproto_msg_type
 // recordset description
 typedef struct _pproto_col_desc
 {
+    uint8               nullable;
     uint8               data_type_precision;
     uint8               data_type_scale;
     uint16              col_alias_sz;
@@ -81,113 +82,116 @@ typedef struct _pproto_col_desc
 } pproto_col_desc;
 
 
-// set socket to work with
-void pproto_set_sock(int client_sock);
-
-
 // read column descriptor in recordset
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_recordset_col_desc(pproto_col_desc *col_desc);
+sint8 pproto_read_recordset_col_desc(int sock, pproto_col_desc *col_desc);
 
 // read number of columns in recordset
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_recordset_col_num(uint16 *n);
+sint8 pproto_read_recordset_col_num(int sock, uint16 *n);
 
 // begin reading row in recordset
 // fills bitmap "nulls" with null value mask (0 - value is null for column, 1 - value is present)
 // return 0 if no rows present anymore, 1 if there is row, -1 on error
-sint8 pproto_recordset_start_row(uint8 *nulls);
+sint8 pproto_recordset_start_row(int sock, uint8 *nulls);
 
 
 // initiate string read
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_str_begin();
+sint8 pproto_read_str_begin(int sock);
 
 // read string data by chunks into strbuf of length sz
 // set sz to actually read bytes size
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_str(uint8 *strbuf, uint32 *sz);
+sint8 pproto_read_str(int sock, uint8 *strbuf, uint32 *sz);
+
+// finish reading string
+// set sz to actually read bytes size
+// return 0 on success, non 0 otherwise
+sint8 pproto_read_str_end(int sock);
 
 // read date value
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_date_value(uint64 *date);
+sint8 pproto_read_date_value(int sock, uint64 *date);
 
 // read decimal value
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_decimal_value(decimal *d);
+sint8 pproto_read_decimal_value(int sock, decimal *d);
 
 // read 8-byte float value
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_double_value(float64 *d);
+sint8 pproto_read_double_value(int sock, float64 *d);
 
 // read 4-byte float value
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_float_value(float32 *f);
+sint8 pproto_read_float_value(int sock, float32 *f);
 
 // read 4-byte integer
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_integer_value(sint32 *i);
+sint8 pproto_read_integer_value(int sock, sint32 *i);
 
 // read 2-byte integer
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_smallint_value(sint16 *s);
+sint8 pproto_read_smallint_value(int sock, sint16 *s);
 
 // read timestamp value
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_timestamp_value(uint64 *ts);
+sint8 pproto_read_timestamp_value(int sock, uint64 *ts);
 
 // read timestamp with timezone value
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_timestamp_with_tz_value(uint64 *ts, sint16 *tz);
+sint8 pproto_read_timestamp_with_tz_value(int sock, uint64 *ts, sint16 *tz);
 
 // return next message type or -1 on error
-pproto_msg_type pproto_read_msg_type();
+pproto_msg_type pproto_read_msg_type(int sock);
 
 // read server hello message
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_server_hello();
+sint8 pproto_read_server_hello(int sock);
 
 // read authentication request
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_auth_request();
+sint8 pproto_read_auth_request(int sock);
 
 // read authentication status: success if auth_status = 1, failure otherwise
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_auth_responce(uint8 *auth_status);
+sint8 pproto_read_auth_responce(int sock, uint8 *auth_status);
 
 // reads error to errcode
 // return 0 on success, non 0 otherwise
-sint8 pproto_read_error(error_code *errcode);
+sint8 pproto_read_error(int sock, error_code *errcode);
 
 
 // send client hello message
 // return 0 on success, non 0 otherwise
-sint8 pproto_send_client_hello(encoding client_encoding);
+sint8 pproto_send_client_hello(int sock, encoding client_encoding);
 
 // send auth message with auth credentials
 // return 0 on successful authentication, 1 on wrong credentials, -1 on error
-sint8 pproto_send_auth(auth_credentials *cred);
+sint8 pproto_send_auth(int sock, auth_credentials *cred);
 
 // sends goodbye message to client
 // return 0 on success, non 0 otherwise
-sint8 pproto_send_goodbye();
+sint8 pproto_send_goodbye(int sock);
 
 
 // start sending sql statement
 // return 0 on success, 1 on error
-sint8 pproto_sql_stmt_begin();
+sint8 pproto_sql_stmt_begin(int sock);
 
 // send sql statement data
 // return 0 on success, 1 on error
-sint8 pproto_send_sql_stmt(const uint8* data, uint32 sz);
+sint8 pproto_send_sql_stmt(int sock, const uint8* data, uint32 sz);
 
 // finish sending sql statement
 // return 0 on success, 1 on error
-sint8 pproto_sql_stmt_finish();
+sint8 pproto_sql_stmt_finish(int sock);
 
 // send cancel message to cancel running statement
 // return 0 on success, non 0 otherwise
-sint8 pproto_send_cancel();
+sint8 pproto_send_cancel(int sock);
 
+// return string of the last error
+const char *pproto_last_error_msg();
 
 #endif

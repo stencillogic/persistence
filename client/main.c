@@ -2,6 +2,8 @@
 
 #include "defs/defs.h"
 #include "client/pproto_client.h"
+#include "client/dbclient.h"
+#include "client/printing.h"
 #include "common/strop.h"
 #include "common/error.h"
 #include <stdio.h>
@@ -19,8 +21,6 @@
 #define CLIENT_SQL_STATEMENT_DELIMITER  (';')
 #define CLIENT_PROGRESS_CHAR            ('.')
 #define CLIENT_PASSWORD_MAX_LEN         (1024)
-#define CLIENT_RS_PADDING               (1)
-#define CLIENT_MAX_COLUMNS              (1024)
 #define CLIENT_MAX_VALUE_LEN            (256)
 #define CLIENT_STRBUF_SZ                (CLIENT_MAX_VALUE_LEN * 32)
 
@@ -54,14 +54,8 @@ uint8       stmt_delimiter = CLIENT_SQL_STATEMENT_DELIMITER;
 const char *prompt = "ptool> ";
 uint8       strbuf[CLIENT_STRBUF_SZ];
 char        decimal_separator = '.';
-uint8       nulls[128];
 encoding    client_enc;
 
-struct rs_columns
-{
-    uint32 width;
-    pproto_col_desc desc;
-} g_rs_columns[CLIENT_MAX_COLUMNS];
 
 typedef struct _char_state
 {
@@ -71,21 +65,6 @@ typedef struct _char_state
     size_t linelen;
 } char_state;
 
-union _value_buf
-{
-    decimal d;
-    sint32  i;
-    sint16  s;
-    float32 f32;
-    float64 f64;
-    uint64  dt;
-    uint64  ts;
-    struct
-    {
-        uint64 ts;
-        sint16 tz;
-    } ts_with_tz;
-} value_buf;
 
 void init()
 {
@@ -202,55 +181,6 @@ void parse_args(int argc, char **argv)
     }
 }
 
-// convert socket error code to string
-const char* herrno_msg()
-{
-    switch(h_errno)
-    {
-        case HOST_NOT_FOUND:
-              return "host is unknown";
-        case NO_DATA:
-            return "requested name does not have an IP address";
-        case NO_RECOVERY:
-            return "an nonrecoverable name server error occurred";
-        case TRY_AGAIN:
-            return "a temporary error, try again later";
-    }
-    return "unkonwn error";
-}
-
-int make_connection()
-{
-    int sock;
-    struct sockaddr_in name;
-    struct hostent *hostinfo;
-
-    sock = socket(PF_INET, SOCK_STREAM, 0);
-    if(sock < 0)
-    {
-          perror("Creating socket");
-          exit(1);
-    }
-
-      name.sin_family = AF_INET;
-    name.sin_port = htons(port);
-    hostinfo = gethostbyname(host);
-    if(NULL == hostinfo)
-    {
-        fprintf(stderr, "Host name resolution: %s.\n", herrno_msg());
-        exit(1);
-    }
-    name.sin_addr = *(struct in_addr *)hostinfo->h_addr;
-
-    if(-1 == connect(sock, (struct sockaddr*)&name, sizeof(name)))
-    {
-        perror("Connecting");
-        exit(1);
-    }
-
-    return sock;
-}
-
 // read next char from stdin
 char next_char(char_state *chst)
 {
@@ -271,12 +201,6 @@ char next_char(char_state *chst)
     return *(chst->lineptr++);
 }
 
-void process_server_error(error_code errcode)
-{
-    fprintf(stderr, "Error from server: %s\n", error_msg(errcode));
-    fflush(stderr);
-}
-
 // calculate output column width
 uint32 calc_col_width(const pproto_col_desc *cd)
 {
@@ -284,7 +208,9 @@ uint32 calc_col_width(const pproto_col_desc *cd)
     switch(cd->data_type)
     {
         case CHARACTER_VARYING:
-            if(w < cd->data_type_len) w = cd->data_type_len;
+            w = cd->data_type_len;
+            if(w > CLIENT_DEFAULT_STR_LEN) w = CLIENT_DEFAULT_STR_LEN;
+            if(w < cd->col_alias_sz) w = cd->col_alias_sz;
             break;
         case DECIMAL:
             if(cd->data_type_precision > 0)
@@ -324,176 +250,141 @@ uint32 calc_col_width(const pproto_col_desc *cd)
 
     if(w > CLIENT_MAX_VALUE_LEN) w = CLIENT_MAX_VALUE_LEN;
 
-    return w + 2 * CLIENT_RS_PADDING;
+    return w + 2 * table_padding();
 }
 
-void table_print_separator(uint16 col_num)
-{
-    fputc(' ', stdout);
-    for(uint16 c = 0; c < col_num; c++)
-    {
-        strbuf[0] = '+';
-        memset(strbuf + 1, '-', g_rs_columns[c].width);
-        strbuf[g_rs_columns[c].width + 1] = '\0';
-        fputs((const char*)strbuf, stdout);
-    }
-    fputs("+\n", stdout);
-}
-
-void table_print_cell(uint8 *value, uint32 w, uint32 c)
-{
-    fputs(" | ", stdout);
-    fprintf(stdout, "\e[s");
-    if(w + 2 * CLIENT_RS_PADDING > g_rs_columns[c].width) w = g_rs_columns[c].width - 2 * CLIENT_RS_PADDING;
-    fwrite(value, w, 1, stdout);
-    fprintf(stdout, "\e[u\e");
-}
-
-void table_finish_row()
-{
-    fputs(" |\n", stdout);
-}
-
-
-sint8 read_and_format_value(uint16 c)
+sint8 read_and_format_value(handle ss, uint16 c)
 {
     uint32 sz = 0;
-    switch(g_rs_columns[c].desc.data_type)
+    dbclient_value val;
+    val.str.buf = strbuf;
+    val.str.sz = table_get_col_width(c);
+    const pproto_col_desc *desc = dbclient_get_column_desc(ss, c);
+
+    if(DBCLIENT_RETURN_SUCCESS != dbclient_next_col_val(ss, &val))
+    {
+        return 1;
+    }
+
+    switch(desc->data_type)
     {
         case CHARACTER_VARYING:
-            if(pproto_read_str_begin() != 0) return 1;
-            sz = g_rs_columns[c].width;
-            if(pproto_read_str(strbuf, &sz) != 0) return 1;    // aborting if error
+            strbuf[val.str.sz] = '\0';
             break;
         case DECIMAL:
-            if(pproto_read_decimal_value(&value_buf.d) != 0) return 1;
-            if(strop_fmt_decimal_pse(strbuf, &sz, CLIENT_STRBUF_SZ, g_rs_columns[c].desc.data_type_precision, g_rs_columns[c].desc.data_type_scale, 0, &value_buf.d) != 0) return 1;
+            if(desc->data_type_precision > 0)
+            {
+                if(strop_fmt_decimal_pse(strbuf, &sz, CLIENT_STRBUF_SZ, desc->data_type_precision, desc->data_type_scale, 0, &val.d) != 0) return 1;
+            }
+            else
+            {
+                if(strop_fmt_decimal_pse(strbuf, &sz, CLIENT_STRBUF_SZ, 1, 6, 1, &val.d) != 0) return 1;
+            }
             break;
         case INTEGER:
-            if(pproto_read_integer_value(&value_buf.i) != 0) return 1;
-            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%11d", value_buf.i);
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%11d", val.i);
             break;
         case SMALLINT:
-            if(pproto_read_smallint_value(&value_buf.s) != 0) return 1;
-            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%6d", value_buf.s);
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%6d", val.s);
             break;
         case FLOAT:
-            if(pproto_read_float_value(&value_buf.f32) != 0) return 1;
-            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%1.6e", value_buf.f32);
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%1.6e", val.f32);
             break;
         case DOUBLE_PRECISION:
-            if(pproto_read_double_value(&value_buf.f64) != 0) return 1;
-            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%1.12e", value_buf.f64);
+            snprintf((char*)strbuf, CLIENT_STRBUF_SZ, "%1.12e", val.f64);
             break;
         case DATE:
-            if(pproto_read_date_value(&value_buf.dt) != 0) return 1;
-            if(strop_fmt_date(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_DATE_FMT, value_buf.dt) != 0) return 1;
+            if(strop_fmt_date(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_DATE_FMT, val.dt) != 0) return 1;
             break;
         case TIMESTAMP:
-            if(pproto_read_timestamp_value(&value_buf.ts) != 0) return 1;
-            if(strop_fmt_timestamp(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_TS_FMT, value_buf.ts) != 0) return 1;
+            if(strop_fmt_timestamp(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_TS_FMT, val.ts) != 0) return 1;
             break;
         case TIMESTAMP_WITH_TZ:
-            if(pproto_read_timestamp_with_tz_value(&value_buf.ts_with_tz.ts, &value_buf.ts_with_tz.tz) != 0) return 1;
-            if(strop_fmt_timestamp_with_tz(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_TS_WITH_TZ_FMT, value_buf.ts_with_tz.ts, value_buf.ts_with_tz.tz) != 0) return 1;
+            if(strop_fmt_timestamp_with_tz(strbuf, &sz, CLIENT_STRBUF_SZ, CLIENT_DEFAULT_TS_WITH_TZ_FMT, val.ts_with_tz.ts, val.ts_with_tz.tz) != 0) return 1;
             break;
     }
+
     return 0;
 }
 
-sint8 get_and_print_recordset()
+sint8 get_and_print_recordset(handle ss)
 {
-    pproto_msg_type msg_type = pproto_read_msg_type();
-    error_code errcode;
     uint16 col_num, c;
     uint32 sz;
     sint8  status;
-    pproto_col_desc col_desc;
+    const pproto_col_desc *col_desc;
 
-    switch(msg_type)
+    //
+    // +-------------+-------------+
+    // | col alias 1 | col alias 2 | ...
+    // +-------------+-------------+
+    // | val1        | val 2       | ...
+    // | val3        | val 4       | ...
+    // +-------------+-------------+
+    //
+    if(DBCLIENT_RETURN_SUCCESS == dbclient_begin_recordset(ss))
     {
-        case PPROTO_MSG_TYPE_ERR:
-            if(pproto_read_error(&errcode) != 0) return 1;
-            process_server_error(errcode);
-            break;
-        case PPROTO_SUCCESS_WITH_TEXT_MSG:
-            fputs("Success: ", stdout);
-            if(pproto_read_str_begin() != 0) return 1;
-            do
-            {
-                sz = CLIENT_STRBUF_SZ;
-                if(pproto_read_str(strbuf, &sz) != 0) return 1;    // aborting if error
-                fwrite(strbuf, 1, sz, stdout);
-            } while(sz == CLIENT_STRBUF_SZ);
-            fputc('\n', stdout);
-            fflush(stdout);
-            break;
-        case PPROTO_SUCCESS_WITHOUT_TEXT_MSG:
-            fputs("Success\n", stdout);
-            fflush(stdout);
-            break;
-        case PPROTO_RECORDSET_MSG:
-            //
-            // +-------------+-------------+
-            // | col alias 1 | col alias 2 | ...
-            // +-------------+-------------+
-            // | val1        | val 2       | ...
-            // | val3        | val 4       | ...
-            // +-------------+-------------+
-            //
-            if(pproto_read_recordset_col_num(&col_num) != 0) return 1;
-
-            if(col_num > CLIENT_MAX_COLUMNS)
-            {
-                fprintf(stderr, "recordset continas more than %d columns. This client supports only %d columns.\n", CLIENT_MAX_COLUMNS, CLIENT_MAX_COLUMNS);
-                col_num = CLIENT_MAX_COLUMNS;
-            }
-
-            fputs("\n ", stdout);
+        if(DBCLIENT_RETURN_SUCCESS == dbclient_get_column_count(ss, &col_num))
+        {
+            table_set_col_num(col_num);
             for(c = 0; c < col_num; c++)
             {
-                if(pproto_read_recordset_col_desc(&col_desc) != 0) return 1;
-                g_rs_columns[c].desc = col_desc;
-                g_rs_columns[c].width = calc_col_width(&col_desc);
+                col_desc = dbclient_get_column_desc(ss, c);
+                table_set_col_width(c, calc_col_width(col_desc));
             }
 
             // table heading
-            table_print_separator(col_num);
+            table_print_separator();
             for(c = 0; c < col_num; c++)
             {
-                table_print_cell(g_rs_columns[c].desc.col_alias, g_rs_columns[c].desc.col_alias_sz, c);
+                col_desc = dbclient_get_column_desc(ss, c);
+                table_print_cell((const char *)col_desc->col_alias, col_desc->col_alias_sz, c);
             }
             table_finish_row();
             table_print_separator(col_num);
 
             // table body
-            status = pproto_recordset_start_row(nulls);
-            while(status)
+            status = dbclient_fetch_row(ss);
+            while(DBCLIENT_RETURN_SUCCESS == status)
             {
-                if(status == -1) return 1;
-
                 for(c = 0; c < col_num; c++)
                 {
                     sz = CLIENT_MAX_VALUE_LEN;
-                    read_and_format_value(c);
-                    table_print_cell(strbuf, sz, c);
+                    if(read_and_format_value(ss, c) != 0)
+                    {
+                        return 1;
+                    }
+                    table_print_cell((const char *)strbuf, sz, c);
                 }
                 table_finish_row();
 
-                status = pproto_recordset_start_row(nulls);
+                status = dbclient_fetch_row(ss);
             }
-            table_print_separator(col_num);
 
-            break;
-        case PPROTO_PROGRESS_MSG:
-            fputc(CLIENT_PROGRESS_CHAR, stdout);
-            break;
-        default:
-            fprintf(stderr, "Unexpected message type from server: %x\n", msg_type);
-            return 1;
+            if(DBCLIENT_RETURN_NO_MORE_ROWS == status)
+            {
+                table_print_separator(col_num);
+            }
+        }
     }
 
+    dbclient_close_recordset(ss);
+
     return 0;
+}
+
+sint8 wait_for_execution_completion(handle ss)
+{
+    dbclient_return_code status = dbclient_execution_status(ss);
+
+    while(DBCLIENT_RETURN_IN_PROGRESS == status)
+    {
+        putc(CLIENT_PROGRESS_CHAR, stdout);
+        status = dbclient_execution_status(ss);
+    }
+    puts("");
+
+    return status;
 }
 
 int main(int argc, char **argv)
@@ -509,7 +400,7 @@ int main(int argc, char **argv)
             if(0 == (user = getlogin()))
             {
                 perror("Falied to determine current user name");
-                exit(1);
+                return 1;
             }
         }
     }
@@ -522,14 +413,14 @@ int main(int argc, char **argv)
         if(tcgetattr(0, &termios_original) != 0)
         {
             perror("Failed to get terminal settings");
-            exit(1);
+            return 1;
         }
         memcpy(&termios_no_echo, &termios_original, sizeof(termios_original));
         termios_no_echo.c_lflag ^= ECHO;
         if(tcsetattr(0, TCSANOW, &termios_no_echo))
         {
             perror("Failed to set terminal settings");
-            exit(1);
+            return 1;
         }
 
         if(0 != fgets(password_buf, CLIENT_PASSWORD_MAX_LEN, stdin))
@@ -541,188 +432,104 @@ int main(int argc, char **argv)
         if(tcsetattr(0, TCSANOW, &termios_original))
         {
             perror("Failed to restore terminal settings");
-            exit(1);
+            return 1;
         }
     }
 
     if(strlen(user) > AUTH_USER_NAME_SZ - ENCODING_MAXCHAR_LEN)
     {
         fprintf(stderr, "User name %s is too long\n", user);
-        exit(1);
+        return 1;
     }
 
-    enum client_states
+    dbclient_init();
+
+    size_t ss_sz = dbclient_get_session_state_sz();
+    void *ss_buf = malloc(ss_sz);
+    if(NULL == ss_buf)
     {
-        PCLIENT_STATE_HELLO,
-        PCLIENT_STATE_READ_ERR_AND_EXIT,
-        PCLIENT_STATE_UNEXPECTED_MSG_TYPE,
-        PCLIENT_STATE_AUTH,
-        PCLIENT_STATE_AUTH_RESPONCE,
-        PCLIENT_STATE_USER_INPUT
-    };
+        perror("Allocation db session");
+        return 1;
+    }
 
-    int sock = make_connection();
-    pproto_set_sock(sock);
-    encoding enc = client_enc;
+    handle ss = dbclient_allocate_session(ss_buf, client_enc, stderr);
 
-    if(pproto_send_client_hello(enc) != 0) exit(1);
+    if(DBCLIENT_RETURN_SUCCESS != dbclient_connect(ss, host, port)) return 1;
 
-    pproto_msg_type msg_type;
-    error_code errcode;
-    uint8 state = PCLIENT_STATE_HELLO;
-    uint8 responce;
+    if(DBCLIENT_RETURN_SUCCESS != dbclient_authenticate(ss, user, password)) return 1;
+
     uint8 in_comment = 0, in_string = 0;
     char ch;
     int aborted = 0;
     char_state chst;
     memset(&chst, 0, sizeof(chst));
 
+    if(DBCLIENT_RETURN_SUCCESS != dbclient_begin_statement(ss)) return 1;
+
     while(!aborted)
     {
-        switch(state)
+        ch = next_char(&chst);
+        if(in_string == 2)  // check for escape sequence for ' inside string
         {
-            case PCLIENT_STATE_HELLO: // read server hello
-                msg_type = pproto_read_msg_type();
-                if(msg_type == PPROTO_MSG_TYPE_ERR)
-                {
-                    state = PCLIENT_STATE_READ_ERR_AND_EXIT;
-                }
-                else if(msg_type == PPROTO_SERVER_HELLO_MSG)
-                {
-                    if(pproto_read_server_hello() != 0)
-                    {
-                        aborted = 1;
-                    }
-                    else state = PCLIENT_STATE_AUTH;
-                }
-                else state = PCLIENT_STATE_UNEXPECTED_MSG_TYPE;
-                break;
-            case PCLIENT_STATE_READ_ERR_AND_EXIT: // read error and exit
-                if(pproto_read_error(&errcode) == 0)
-                {
-                    fprintf(stderr, "Error from server: %s\n", error_msg(errcode));
-                }
-                aborted = 1;
-                break;
-            case PCLIENT_STATE_UNEXPECTED_MSG_TYPE: // process protocol violation
-                fprintf(stderr, "Unexpected message type from server: %x\n", msg_type);
-                aborted = 1;
-                break;
-            case PCLIENT_STATE_AUTH: // read server auth
-                msg_type = pproto_read_msg_type();
-                if(msg_type == PPROTO_MSG_TYPE_ERR)
-                {
-                    state = PCLIENT_STATE_READ_ERR_AND_EXIT;
-                }
-                else if(msg_type == PPROTO_AUTH_REQUEST_MSG)
-                {
-                    if(pproto_read_auth_request() != 0)
-                    {
-                        aborted = 1;
-                    }
-                    else
-                    {
-                        auth_credentials cred;
-                        strncpy((char *)cred.user_name, user, AUTH_USER_NAME_SZ);
-                        auth_hash_pwd((uint8 *)password, strlen(password), cred.credentials);
+            if(ch == '\'') in_string = 1;
+            else in_string = 0;
+        }
+        if(in_comment == 1) // previous ch == '-'
+        {
+            if(ch == '-') in_comment = 2;
+            else in_comment = 0;
+        }
 
-                        if(pproto_send_auth(&cred) != 0)
-                        {
-                            aborted = 1;
-                        }
-                        else state = PCLIENT_STATE_AUTH_RESPONCE;
-                    }
-                }
-                else state = PCLIENT_STATE_UNEXPECTED_MSG_TYPE;
-                break;
-            case PCLIENT_STATE_AUTH_RESPONCE: // read auth responce
-                msg_type = pproto_read_msg_type();
-                if(msg_type == PPROTO_MSG_TYPE_ERR)
-                {
-                    state = PCLIENT_STATE_READ_ERR_AND_EXIT;
-                }
-                else if(msg_type == PPROTO_AUTH_RESPONCE_MSG)
-                {
-                    if(pproto_read_auth_responce(&responce) != 0)
-                    {
-                        aborted = 1;
-                    }
-                    else
-                    {
-                        if(1 == responce) state = PCLIENT_STATE_USER_INPUT;
-                        else
-                        {
-                            fputs("Invalid credentials specified\n", stderr);
-                            aborted = 1;
-                        }
-                    }
-                }
-                else state = PCLIENT_STATE_UNEXPECTED_MSG_TYPE;
-                break;
-            case PCLIENT_STATE_USER_INPUT: // request input from user (read and exec sql statements)
-                if(pproto_sql_stmt_begin() != 0)
+        if(in_string == 0 && in_comment == 0)
+        {
+            if(ch == stmt_delimiter)
+            {
+                // statement completed
+                if(DBCLIENT_RETURN_SUCCESS != dbclient_finish_statement(ss))
                 {
                     aborted = 1;
                 }
 
-                while(!aborted)    // entering repl loop
+                switch(wait_for_execution_completion(ss))
                 {
-                    ch = next_char(&chst);
-                    if(in_string == 2)  // check for escape sequence for ' inside string
-                    {
-                        if(ch == '\'') in_string = 1;
-                        else in_string = 0;
-                    }
-                    if(in_comment == 1) // previous ch == '-'
-                    {
-                        if(ch == '-') in_comment = 2;
-                        else in_comment = 0;
-                    }
+                    case DBCLIENT_RETURN_SUCCESS_RS:
+                        get_and_print_recordset(ss);
+                        break;
+                    case DBCLIENT_RETURN_SUCCESS_MSG:
 
-                    if(in_string == 0 && in_comment == 0)
-                    {
-                        if(ch == stmt_delimiter)
-                        {
-                            // statement completed
-                            if(pproto_sql_stmt_finish() != 0)
-                            {
-                                aborted = 1;
-                            }
-
-                            get_and_print_recordset();
-
-                            if(pproto_sql_stmt_begin() != 0)
-                            {
-                                aborted = 1;
-                            }
-                        }
-                        else if(ch == '\'')
-                        {
-                            in_string = 1;
-                        }
-                        else if(ch == '-') in_comment = 1;
-                    }
-                    else if(in_comment == 2)
-                    {
-                        if(ch == '\n') in_comment = 0;
-                    }
-                    else if(in_string == 1)
-                    {
-                        if(ch == '\'') in_string = 2;   // end of string or '' (need to check next char)
-                    }
-
-                    // send statement char to server
-                    if(pproto_send_sql_stmt((const uint8 *)&ch, sizeof(char)) != 0)
-                    {
-                        aborted = 1;
-                    }
+                    case DBCLIENT_RETURN_SUCCESS:
+                        puts("Complete");
+                        break;
                 }
-                break;
+
+                if(DBCLIENT_RETURN_SUCCESS != dbclient_begin_statement(ss))
+                {
+                    aborted = 1;
+                }
+            }
+            else if(ch == '\'')
+            {
+                in_string = 1;
+            }
+            else if(ch == '-') in_comment = 1;
+        }
+        else if(in_comment == 2)
+        {
+            if(ch == '\n') in_comment = 0;
+        }
+        else if(in_string == 1)
+        {
+            if(ch == '\'') in_string = 2;   // end of string or '' (need to check next char)
+        }
+
+        // send statement char to server
+        if(DBCLIENT_RETURN_SUCCESS != dbclient_statement(ss, (const uint8 *)&ch, sizeof(char)))
+        {
+            aborted = 1;
         }
     }
 
     fflush(NULL);
-    close(sock);
 
     return aborted;
 }
