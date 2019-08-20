@@ -1,4 +1,4 @@
 push_all.sh
 *.o
 /target/
-tag
+tags

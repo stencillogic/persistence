@@ -9,20 +9,22 @@ Interaction protocol description
     <error_msg_magic> ::= 0x0F
 
     <text_string> ::= <unbound_text_string> | <limited_text_string>
-    <unbound_text_string> ::= <unbound_text_string_magic> { <character> } <text_string_terminator>
+    <unbound_text_string> ::= <unbound_text_string_magic> { <string_chunk> } <string_terminator>
     <unbound_text_string_magic> ::= 0x01
-    <character> ::= any byte except <string_terminator>
-    <text_string_terminator> ::= 0x00 | 0x0000
+    <string_chunk> := <chunk_length> { <character> }
+    <chunk_length> := unsigned byte, number of bytes in chunk
+    <character> ::= any byte
+    <string_terminator> ::= 0x00 (chunk of length 0)
 
-    <limited_text_string> ::= <limited_text_string_magic> <text_string_length> { <character> }
+    <limited_text_string> ::= <limited_text_string_magic> <text_string_length> { <string_chunk> } <string_terminator>
     <limited_text_string_magic> ::= 0xFE
-    <text_string_length> ::= uint32 length of the string in bytes
+    <text_string_length> ::= uint64 length of the string in bytes
 
   <success_message> ::= <success_message_with_text> | <success_message_without_text>
     <success_message_with_text> ::= <success_message_with_text_magic> <text_string>
-    <success_message_with_text_magic> ::= 0xF01
+    <success_message_with_text_magic> ::= 0xF1
     <success_message_without_text> ::= <success_message_without_text_magic>
-    <success_message_without_text_magic> ::= 0xF02
+    <success_message_without_text_magic> ::= 0xF2
 
   <recordset_message> ::= <recordset_message_magic> <recordset_descriptor> { <recordset_row> } <recordset_end>
     <recordset_message_magic> ::= 0xFF
@@ -39,8 +41,8 @@ Interaction protocol description
 
     <recordset_row> ::= <recordset_row_magic> <recordset_row_header> { <cell_value> }
     <recordset_row_magic> ::= 0x06
-    <recordset_row_header> ::= 0x00 | <nulls_bitmask>
-    <nulls_bitmask> ::= first bit is 1, othe bits correspond to null values (0) or not null values (1)
+    <recordset_row_header> ::= [ <nulls_bitmask> ]
+    <nulls_bitmask> ::= bitmask, (0) is for null value, (1) is for non-null value, the length is defined by number of nullable columns
     <cell_value> ::= <text_string> | <numeric_value> | <timestamp_value> | <timestamp_with_tz_value> | <smallint_value> | <integer_value> | <float_value> | <double_precision_value> | <date_value> | <null_value>
     <numeric_value> ::= bytes representing serialized numeric value: 
         1st byte:
@@ -49,6 +51,7 @@ Interaction protocol description
             remaining bits - mantissa length in bytes
         other bytes: 
             mantissa bytes, uint8 sequence
+            exponent, sint8 byte
     <timestamp_value> ::= uint64 value of microseconds in network order
     <timestamp_with_tz_value> ::= uint64 value of microseconds in network order, sint16 timezone minutes in network order
     <smallint_value> ::= sint16 value in network order

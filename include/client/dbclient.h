@@ -73,7 +73,7 @@ typedef union
     struct
     {
         uint8 *buf;
-        uint32 sz;
+        uint64 sz;
     } str;
 } dbclient_value;
 
