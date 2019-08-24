@@ -25,13 +25,13 @@ typedef enum
 } dbclient_state;
 
 
-typedef sint8 (*pproto_read_value_fp)(int, void*);
+typedef sint8 (*pproto_client_read_value_fp)(int, void*);
 
 
 struct _g_dbclient_state
 {
     uint8                   initialized;
-    pproto_read_value_fp    read_value[7];
+    pproto_client_read_value_fp    read_value[7];
     uint8                   bits[8];
 } g_dbclient_state = {.initialized = 0};
 
@@ -45,7 +45,7 @@ typedef struct _dbclient_session
     uint16          rs_col_num;
     uint16          col_idx;
     uint16          nullable_col_idx;
-    handle          pproto_session;
+    handle          pproto_client_session;
     uint32          nulls_sz;
     char            errmes[DBCLIENT_MAX_ERRMES + 1];
     uint8           row_nulls[DBCLIENT_ROW_NULLS_SZ];
@@ -89,7 +89,7 @@ void dbclient_std_error(dbclient_session *ss, const char *context, int errcode)
 
 
 // prepare error message in buffer
-void dbclient_pproto_error(dbclient_session *ss, const char *context)
+void dbclient_pproto_client_error(dbclient_session *ss, const char *context)
 {
     size_t len = strlen(context), len2;
     const char *msg;
@@ -101,7 +101,7 @@ void dbclient_pproto_error(dbclient_session *ss, const char *context)
     ss->errmes[len++] = ':';
     ss->errmes[len++] = ' ';
 
-    msg = pproto_last_error_msg(ss->pproto_session);
+    msg = pproto_client_last_error_msg(ss->pproto_client_session);
 
     len2 = strlen(msg);
     if(len2 > DBCLIENT_MAX_ERRMES - len) len2 = DBCLIENT_MAX_ERRMES - len;
@@ -128,23 +128,23 @@ dbclient_return_code dbclient_server_error(dbclient_session *ss)
     uint64 sz = DBCLIENT_MAX_ERRMES;
     uint64 len;
 
-    if(pproto_read_str_begin(ss->pproto_session, &len) != 0)
+    if(pproto_client_read_str_begin(ss->pproto_client_session, &len) != 0)
     {
-        dbclient_pproto_error(ss, "Retreiving error message from server");
+        dbclient_pproto_client_error(ss, "Retreiving error message from server");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_read_str(ss->pproto_session, (uint8 *)ss->errmes, &sz) != 0)
+    if(pproto_client_read_str(ss->pproto_client_session, (uint8 *)ss->errmes, &sz) != 0)
     {
-        dbclient_pproto_error(ss, "Retreiving error message from server");
+        dbclient_pproto_client_error(ss, "Retreiving error message from server");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_read_str_end(ss->pproto_session) != 0)
+    if(pproto_client_read_str_end(ss->pproto_client_session) != 0)
     {
-        dbclient_pproto_error(ss, "Retreiving error message from server");
+        dbclient_pproto_client_error(ss, "Retreiving error message from server");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
@@ -218,7 +218,7 @@ char *dbclient_last_error(handle session)
 void dbclient_termination_with_err(dbclient_session *ss, const char* context)
 {
     dbclient_close_connection(ss);
-    dbclient_pproto_error(ss, context);
+    dbclient_pproto_client_error(ss, context);
     dbclient_spill_errmes(ss);
 }
 
@@ -230,7 +230,7 @@ void dbclient_process_err_msg_type(dbclient_session *ss, pproto_msg_type msg_typ
     }
     else if(msg_type == PPROTO_MSG_TYPE_ERR)
     {
-        dbclient_pproto_error(ss, context);
+        dbclient_pproto_client_error(ss, context);
     }
     else
     {
@@ -242,7 +242,7 @@ void dbclient_process_err_msg_type(dbclient_session *ss, pproto_msg_type msg_typ
 
 size_t dbclient_get_session_state_sz()
 {
-    return sizeof(dbclient_session) + pproto_get_alloc_size();
+    return sizeof(dbclient_session) + pproto_client_get_alloc_size();
 }
 
 
@@ -256,13 +256,13 @@ void dbclient_init()
     g_dbclient_state.bits[5] = 0x20;
     g_dbclient_state.bits[6] = 0x40;
     g_dbclient_state.bits[7] = 0x80;
-    g_dbclient_state.read_value[0] = (pproto_read_value_fp)pproto_read_date_value;
-    g_dbclient_state.read_value[1] = (pproto_read_value_fp)pproto_read_decimal_value;
-    g_dbclient_state.read_value[2] = (pproto_read_value_fp)pproto_read_double_value;
-    g_dbclient_state.read_value[3] = (pproto_read_value_fp)pproto_read_float_value;
-    g_dbclient_state.read_value[4] = (pproto_read_value_fp)pproto_read_integer_value;
-    g_dbclient_state.read_value[5] = (pproto_read_value_fp)pproto_read_smallint_value;
-    g_dbclient_state.read_value[6] = (pproto_read_value_fp)pproto_read_timestamp_value;
+    g_dbclient_state.read_value[0] = (pproto_client_read_value_fp)pproto_client_read_date_value;
+    g_dbclient_state.read_value[1] = (pproto_client_read_value_fp)pproto_client_read_decimal_value;
+    g_dbclient_state.read_value[2] = (pproto_client_read_value_fp)pproto_client_read_double_value;
+    g_dbclient_state.read_value[3] = (pproto_client_read_value_fp)pproto_client_read_float_value;
+    g_dbclient_state.read_value[4] = (pproto_client_read_value_fp)pproto_client_read_integer_value;
+    g_dbclient_state.read_value[5] = (pproto_client_read_value_fp)pproto_client_read_smallint_value;
+    g_dbclient_state.read_value[6] = (pproto_client_read_value_fp)pproto_client_read_timestamp_value;
     g_dbclient_state.initialized = 1;
 }
 
@@ -279,7 +279,7 @@ handle dbclient_allocate_session(void *ssbuf, encoding enc, FILE* err_stream)
     ss->enc = enc;
     ss->err_stream = err_stream;
 
-    pproto_create((uint8*)ssbuf + sizeof(dbclient_session), -1);
+    pproto_client_create((uint8*)ssbuf + sizeof(dbclient_session), -1);
 
     return (handle)ss;
 }
@@ -304,15 +304,15 @@ dbclient_return_code dbclient_connect(handle session, const char *host, uint16_t
         return DBCLIENT_RETURN_ERROR;
     }
 
-    pproto_set_sock(ss->pproto_session, ss->sock);
+    pproto_client_set_sock(ss->pproto_client_session, ss->sock);
 
-    if(pproto_send_client_hello(ss->pproto_session, ss->enc) != 0)
+    if(pproto_client_send_hello(ss->pproto_client_session, ss->enc) != 0)
     {
         dbclient_termination_with_err(ss, "Sending hello to server");
         return DBCLIENT_RETURN_ERROR;
     }
 
-    msg_type = pproto_read_msg_type(ss->pproto_session);
+    msg_type = pproto_client_read_msg_type(ss->pproto_client_session);
     if(msg_type != PPROTO_SERVER_HELLO_MSG)
     {
         dbclient_process_err_msg_type(ss, msg_type, "Reading server hello");
@@ -340,15 +340,15 @@ dbclient_return_code dbclient_authenticate(handle session, const char *user, con
         return DBCLIENT_RETURN_ERROR;
     }
 
-    msg_type = pproto_read_msg_type(ss->pproto_session);
+    msg_type = pproto_client_read_msg_type(ss->pproto_client_session);
     if(msg_type == PPROTO_AUTH_REQUEST_MSG)
     {
         strncpy((char *)cred.user_name, user, AUTH_USER_NAME_SZ);
         auth_hash_pwd((uint8 *)password, strlen(password), cred.credentials);
 
-        if(pproto_send_auth(ss->pproto_session, &cred) != 0)
+        if(pproto_client_send_auth(ss->pproto_client_session, &cred) != 0)
         {
-            dbclient_pproto_error(ss, "Authenticating to server");
+            dbclient_pproto_client_error(ss, "Authenticating to server");
             dbclient_spill_errmes(ss);
             return DBCLIENT_RETURN_ERROR;
         }
@@ -359,12 +359,12 @@ dbclient_return_code dbclient_authenticate(handle session, const char *user, con
         return DBCLIENT_RETURN_ERROR;
     }
 
-    msg_type = pproto_read_msg_type(ss->pproto_session);
+    msg_type = pproto_client_read_msg_type(ss->pproto_client_session);
     if(msg_type == PPROTO_AUTH_RESPONCE_MSG)
     {
-        if(pproto_read_auth_responce(ss->pproto_session, &responce) != 0)
+        if(pproto_client_read_auth_responce(ss->pproto_client_session, &responce) != 0)
         {
-            dbclient_pproto_error(ss, "Reading auth responce");
+            dbclient_pproto_client_error(ss, "Reading auth responce");
             dbclient_spill_errmes(ss);
             return DBCLIENT_RETURN_ERROR;
         }
@@ -401,9 +401,9 @@ dbclient_return_code dbclient_begin_statement(handle session)
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_sql_stmt_begin(ss->pproto_session) != 0)
+    if(pproto_client_sql_stmt_begin(ss->pproto_client_session) != 0)
     {
-        dbclient_pproto_error(ss, "Sending statement text to server");
+        dbclient_pproto_client_error(ss, "Sending statement text to server");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
@@ -424,9 +424,9 @@ dbclient_return_code dbclient_statement(handle session, const uint8 *buf, uint32
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_send_sql_stmt(ss->pproto_session, buf, len) != 0)
+    if(pproto_client_send_sql_stmt(ss->pproto_client_session, buf, len) != 0)
     {
-        dbclient_pproto_error(ss, "Sending statement text to server");
+        dbclient_pproto_client_error(ss, "Sending statement text to server");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
@@ -445,9 +445,9 @@ dbclient_return_code dbclient_finish_statement(handle session)
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_sql_stmt_finish(ss->pproto_session) != 0)
+    if(pproto_client_sql_stmt_finish(ss->pproto_client_session) != 0)
     {
-        dbclient_pproto_error(ss, "Sending statement text to server");
+        dbclient_pproto_client_error(ss, "Sending statement text to server");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
@@ -470,7 +470,7 @@ dbclient_return_code dbclient_execution_status(handle session)
         return DBCLIENT_RETURN_ERROR;
     }
 
-    msg_type = pproto_read_msg_type(ss->pproto_session);
+    msg_type = pproto_client_read_msg_type(ss->pproto_client_session);
     if(msg_type == PPROTO_PROGRESS_MSG)
     {
         return DBCLIENT_RETURN_IN_PROGRESS;
@@ -510,9 +510,9 @@ dbclient_return_code dbclient_cancel_statement(handle session)
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_send_cancel(ss->pproto_session) != 0)
+    if(pproto_client_send_cancel(ss->pproto_client_session) != 0)
     {
-        dbclient_pproto_error(ss, "Canceling statement");
+        dbclient_pproto_client_error(ss, "Canceling statement");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
@@ -535,9 +535,9 @@ dbclient_return_code dbclient_begin_recordset(handle session)
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_read_recordset_col_num(ss->pproto_session, &(ss->rs_col_num)) != 0)
+    if(pproto_client_read_recordset_col_num(ss->pproto_client_session, &(ss->rs_col_num)) != 0)
     {
-        dbclient_pproto_error(ss, "Retreiving recordset description");
+        dbclient_pproto_client_error(ss, "Retreiving recordset description");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
@@ -554,9 +554,9 @@ dbclient_return_code dbclient_begin_recordset(handle session)
     ss->nulls_sz = 0;
     for(c = 0; c < ss->rs_col_num; c++)
     {
-        if(pproto_read_recordset_col_desc(ss->pproto_session, &(ss->rs_columns[c])) != 0)
+        if(pproto_client_read_recordset_col_desc(ss->pproto_client_session, &(ss->rs_columns[c])) != 0)
         {
-            dbclient_pproto_error(ss, "Retreiving recordset description");
+            dbclient_pproto_client_error(ss, "Retreiving recordset description");
             dbclient_spill_errmes(ss);
             return DBCLIENT_RETURN_ERROR;
         }
@@ -629,7 +629,7 @@ dbclient_return_code dbclient_fetch_row(handle session)
         return DBCLIENT_RETURN_ERROR;
     }
 
-    switch(pproto_recordset_start_row(ss->pproto_session, ss->row_nulls, ss->nulls_sz))
+    switch(pproto_client_recordset_start_row(ss->pproto_client_session, ss->row_nulls, ss->nulls_sz))
     {
         case 0:
             ret = DBCLIENT_RETURN_NO_MORE_ROWS;
@@ -638,7 +638,7 @@ dbclient_return_code dbclient_fetch_row(handle session)
             ret = DBCLIENT_RETURN_SUCCESS;
             break;
         case -1:
-            dbclient_pproto_error(ss, "Fetching the row");
+            dbclient_pproto_client_error(ss, "Fetching the row");
             dbclient_spill_errmes(ss);
             ret = DBCLIENT_RETURN_ERROR;
             break;
@@ -693,16 +693,16 @@ dbclient_return_code dbclient_next_col_val(handle session, dbclient_value *val)
         switch(dt)
         {
             case CHARACTER_VARYING:
-                if(0 == (ret = pproto_read_str_begin(ss->pproto_session, &len)))
+                if(0 == (ret = pproto_client_read_str_begin(ss->pproto_client_session, &len)))
                 {
-                    if(0 == (ret = pproto_read_str(ss->pproto_session, val->str.buf, &(val->str.sz))))
+                    if(0 == (ret = pproto_client_read_str(ss->pproto_client_session, val->str.buf, &(val->str.sz))))
                     {
-                        ret = pproto_read_str_end(ss->pproto_session);
+                        ret = pproto_client_read_str_end(ss->pproto_client_session);
                     }
                 }
                 break;
             case TIMESTAMP_WITH_TZ:
-                ret = pproto_read_timestamp_with_tz_value(ss->pproto_session, &val->ts_with_tz.ts, &val->ts_with_tz.tz);
+                ret = pproto_client_read_timestamp_with_tz_value(ss->pproto_client_session, &val->ts_with_tz.ts, &val->ts_with_tz.tz);
                 break;
             default:
                 ret = g_dbclient_state.read_value[dt](ss->sock, (void *)val);
@@ -711,7 +711,7 @@ dbclient_return_code dbclient_next_col_val(handle session, dbclient_value *val)
 
         if(ret != 0)
         {
-            dbclient_pproto_error(ss, "Fetching value");
+            dbclient_pproto_client_error(ss, "Fetching value");
             dbclient_spill_errmes(ss);
             return DBCLIENT_RETURN_ERROR;
         }
@@ -735,9 +735,9 @@ dbclient_return_code dbclient_close_recordset(handle session)
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_send_cancel(ss->pproto_session) != 0)
+    if(pproto_client_send_cancel(ss->pproto_client_session) != 0)
     {
-        dbclient_pproto_error(ss, "Closing recordset");
+        dbclient_pproto_client_error(ss, "Closing recordset");
         dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
@@ -754,9 +754,9 @@ dbclient_return_code dbclient_close_session(handle session, uint8 force)
 
     if(DBCLIENT_STATE_DISCONNECTED != ss->state)
     {
-        if(pproto_send_goodbye(ss->pproto_session) != 0)
+        if(pproto_client_send_goodbye(ss->pproto_client_session) != 0)
         {
-            dbclient_pproto_error(ss, "Closing session");
+            dbclient_pproto_client_error(ss, "Closing session");
             dbclient_spill_errmes(ss);
             if(0 == force)
             {

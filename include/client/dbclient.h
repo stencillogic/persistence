@@ -1,9 +1,9 @@
 #ifndef _DBCLIENT_H
 #define _DBCLIENT_H
 
-// Client side functions (wrapper for abstracting pproto calls)
+// Client side functions (wrapper of low-level pproto calls)
 //
-// DBClient works has underlying state machine:
+// DBClient has underlying state machine:
 //
 // X - not initialized
 // D - disconnected

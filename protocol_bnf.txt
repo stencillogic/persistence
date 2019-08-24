@@ -32,11 +32,12 @@ Interaction protocol description
     <recordset_descriptor> ::= <col_num> { <col_descriptor> }
     <col_num> ::= column number in recordset, uin16 in network order
     <col_descriptor> ::= <data_type> <col_alias>
-    <data_type> ::= <data_type_code> [ <data_type_length> | <data_type_precision> <data_type_scale> ]
+    <data_type> ::= <data_type_code> [ <data_type_length> | <data_type_precision> <data_type_scale> ] <flags>
     <data_type_code> ::= one of _column_datatype enum values, uint8
     <data_type_length> ::= uint64 value in network order - max length defined for data type
     <data_type_precision> ::= 1-byte value of data type precision
     <data_type_scale> ::= 1-byte value of data type scale
+    <flags> ::= uint8 bitmask, bit 0x01 if set then field is nullable
     <col_alias> ::= <text_string>
 
     <recordset_row> ::= <recordset_row_magic> <recordset_row_header> { <cell_value> }

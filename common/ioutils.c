@@ -335,6 +335,7 @@ sint8 ioutils_send(const uint8 *buf, uint32 sz)
         cpsz = (diff > sz) ? sz : diff;
         memcpy(g_ioutils_send_buf + g_ioutils_state.send_buf_ptr, buf + wr, cpsz);
         wr += cpsz;
+        g_ioutils_state.send_buf_ptr += cpsz;
     }
     return 0;
 }

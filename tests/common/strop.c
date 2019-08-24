@@ -140,14 +140,10 @@ int test_strop_functions()
 
     ptr = 0;
     if(strop_fmt_timestamp_with_tz(buf, &ptr, 99, _ach("yyyy-mm-dd hh:mi:ss.ffftz"), (63718704000UL + 86399) * 1000000 + 765432, 691) != 0) return __LINE__;
-    buf[ptr]='\0';
-    puts(buf);
     if(memcmp(buf, "2020-03-02 23:59:59.765+11:31", 29)) return __LINE__;
 
     ptr = 0;
     if(strop_fmt_timestamp_with_tz(buf, &ptr, 99, _ach("yyyy-mm-dd hh:mi:ss.ffftz"), (63718704000UL + 86399) * 1000000 + 123456, -691) != 0) return __LINE__;
-    buf[ptr]='\0';
-    puts(buf);
     if(memcmp(buf, "2020-03-02 23:59:59.123-11:31", 29)) return __LINE__;
 
 

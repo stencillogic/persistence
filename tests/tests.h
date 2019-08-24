@@ -23,4 +23,7 @@ int test_encoding_functions();
 // test decimal functions
 int test_decimal_functions();
 
+// test client-side low level protocol functions
+int test_pproto_client_functions();
+
 #endif
