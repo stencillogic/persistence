@@ -589,7 +589,7 @@ pproto_msg_type pproto_client_read_msg_type(handle ss)
             return PPROTO_UNKNOWN_MSG;
     }
 
-    return 0;
+    return PPROTO_UNKNOWN_MSG;
 }
 
 
@@ -697,3 +697,15 @@ const char *pproto_client_last_error_msg(handle ss)
     return state->errmes;
 }
 
+sint8 pproto_client_read_server_hello(handle ss, uint16 *vmajor, uint16 *vminor)
+{
+    uint16 v1, v2;
+
+    if(0 != pproto_client_get(ss, (uint8 *)&v1, sizeof(v1))) return 1;
+    if(0 != pproto_client_get(ss, (uint8 *)&v2, sizeof(v2))) return 1;
+
+    *vmajor = be16toh(v1);
+    *vminor = be16toh(v2);
+
+    return 0;
+}

@@ -28,10 +28,5 @@ int main(int argc, char **argv)
         write_error_and_exit();
     }
 
-    if(listener_create())
-    {
-        write_error_and_exit();
-    }
-
-    return 0;
+    return listener_create();
 }

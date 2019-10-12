@@ -29,6 +29,7 @@ int main(int argc, char **argv)
     process_test_fail(test_encoding_functions(), "test_encoding_functions");
     process_test_fail(test_decimal_functions(), "test_decimal_functions");
     process_test_fail(test_pproto_client_functions(), "test_pproto_client_functions");
+    process_test_fail(test_dbclient_functions(), "test_dbclient_functions");
 
     printf("Test execution completed.\n");
     return 0;

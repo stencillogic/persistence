@@ -58,15 +58,15 @@ sint8 listener_create()
         client_sock = accept(sock, (struct sockaddr *)&client_addr, &client_addr_size);
         if(-1 == client_sock)
         {
-            // TODO process errno values, define cycle break conditions
-            logger_error(_ach("Accepting connection from client: %s"), strerror(errno));
+            int err = errno;
+            logger_error(_ach("Accepting connection from client: %s"), strerror(err));
         }
         else
         {
             pid_t pid = fork();
             if(pid < 0)
             {
-                pproto_send_error(ERROR_SESSION_INIT_FAIL);
+                logger_error(_ach("Failed to spawn client process: %s"), strerror(errno));
             }
             else if(pid == 0)
             {
@@ -80,18 +80,23 @@ sint8 listener_create()
                 }
 
                 result = session_create(client_sock);
+            }
+            else
+            {
+                logger_info(_ach("Client process created, pid = %d"), pid);
+            }
 
-                if(-1 == shutdown(client_sock, SHUT_WR))
+            if(-1 == shutdown(client_sock, SHUT_WR))
+            {
+                if(!(ENOTCONN == errno))
                 {
-                    if(!(ENOTCONN == errno))
-                    {
-                        logger_warn(_ach("Shutting down client connection: %s"), strerror(errno));
-                    }
+                    logger_warn(_ach("Shutting down client connection: %s"), strerror(errno));
                 }
-                if(-1 == close(client_sock))
-                {
-                    logger_error(_ach("Closing client socket: %s"), strerror(errno));
-                }
+            }
+
+            if(-1 == close(client_sock))
+            {
+                logger_error(_ach("Closing client socket: %s"), strerror(errno));
             }
         }
     }

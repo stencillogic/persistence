@@ -289,6 +289,7 @@ dbclient_return_code dbclient_connect(handle session, const char *host, uint16_t
 {
     pproto_msg_type msg_type;
     dbclient_session *ss = (dbclient_session *)session;
+    uint16 vminor, vmajor;
 
     if(DBCLIENT_STATE_DISCONNECTED != ss->state)
     {
@@ -317,6 +318,20 @@ dbclient_return_code dbclient_connect(handle session, const char *host, uint16_t
     {
         dbclient_process_err_msg_type(ss, msg_type, "Reading server hello");
         dbclient_close_connection(ss);
+        return DBCLIENT_RETURN_ERROR;
+    }
+
+    if(0 != pproto_client_read_server_hello(ss->pproto_client_session, &vmajor, &vminor))
+    {
+        dbclient_termination_with_err(ss, "Reading server hello");
+        return DBCLIENT_RETURN_ERROR;
+    }
+
+    if(vmajor != PPROTO_MAJOR_VERSION)
+    {
+        dbclient_close_connection(ss);
+        snprintf(ss->errmes, DBCLIENT_MAX_ERRMES + 1, "Major protocol version differs, client^ %d, server: %d", PPROTO_MAJOR_VERSION, vmajor);
+        dbclient_spill_errmes(ss);
         return DBCLIENT_RETURN_ERROR;
     }
 

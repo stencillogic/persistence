@@ -573,7 +573,7 @@ sint8 strop_fmt_decimal_pse(uint8 *buf, uint32 *start, uint32 sz, uint8 precisio
             memcpy(buf + ptr, g_strop_state.decimal_separator.chr, g_strop_state.decimal_separator.length);
             ptr += g_strop_state.decimal_separator.length;
 
-            if(sz - ptr < m * g_strop_state.digits[0].length) return 1; // buf overflow
+            if(sz - ptr < (uint32)m * g_strop_state.digits[0].length) return 1; // buf overflow
 
             do
             {
@@ -587,7 +587,7 @@ sint8 strop_fmt_decimal_pse(uint8 *buf, uint32 *start, uint32 sz, uint8 precisio
         if(exp > 0)
         {
             // add exponent
-            if(sz - ptr < g_strop_state.digits[0].length + g_strop_state.fmt_letter_e.length + g_strop_state.sign_plus.length) return 1; // buf overflow
+            if(sz - ptr < (uint32)g_strop_state.digits[0].length + (uint32)g_strop_state.fmt_letter_e.length + (uint32)g_strop_state.sign_plus.length) return 1; // buf overflow
 
             memcpy(buf + ptr, g_strop_state.fmt_letter_e.chr, g_strop_state.fmt_letter_e.length);
             ptr += g_strop_state.fmt_letter_e.length;

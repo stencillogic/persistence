@@ -80,6 +80,7 @@ int test_pproto_client_functions()
     uint8 nulls[2];
     pproto_col_desc cd;
     uint16 col_num;
+    uint16 vminor, vmajor;
 
     decimal d;
     float32 f32;
@@ -131,6 +132,16 @@ int test_pproto_client_functions()
     if(1 != send(sv[1], buf, 1, 0)) return __LINE__;
     msg_type = pproto_client_read_msg_type(ss);
     if(PPROTO_UNKNOWN_MSG != msg_type) return __LINE__;
+
+    vmajor = vminor = 0;
+    buf[0] = 1;
+    buf[1] = 2;
+    buf[2] = 3;
+    buf[3] = 4;
+    if(4 != send(sv[1], buf, 4, 0)) return __LINE__;
+    if(0 != pproto_client_read_server_hello(ss, &vmajor, &vminor)) return __LINE__;
+    if(vmajor != 258 || vminor != 772) return __LINE__;
+
 
     strncpy(cred.user_name, "test", AUTH_USER_NAME_SZ);
     memset(cred.credentials, 0xcc, AUTH_CREDENTIAL_SZ);

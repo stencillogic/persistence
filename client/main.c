@@ -5,7 +5,6 @@
 #include "client/dbclient.h"
 #include "client/printing.h"
 #include "common/strop.h"
-#include "common/error.h"
 #include <stdio.h>
 #include <getopt.h>
 #include <stdlib.h>

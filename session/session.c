@@ -2,6 +2,8 @@
 #include "session/pproto_server.h"
 #include "logging/logger.h"
 #include "auth/auth_server.h"
+#include "parser/parser.h"
+#include "execution/execution.h"
 #include <unistd.h>
 #include <string.h>
 
@@ -47,12 +49,26 @@ encoding session_encoding()
     return g_session_state.client_encoding;
 }
 
+// implements authentication flow
+// return 0 on successful auth, 1 on error, 2 if connection with client is closed
 sint8 session_auth_client()
 {
     sint8 res;
     auth_credentials cred;
 
-    if(pproto_read_client_hello(&g_session_state.client_encoding) != 0)
+    switch(pproto_server_read_msg_type())
+    {
+        case PPROTO_GOODBYE_MSG:
+            return 2;
+            break;
+        case PPROTO_CLIENT_HELLO_MSG:
+            break;
+        default:
+            return 1;
+            break;
+    }
+
+    if(pproto_server_read_client_hello(&g_session_state.client_encoding) != 0)
     {
         return 1;
     }
@@ -63,21 +79,33 @@ sint8 session_auth_client()
         return 1;
     }
 
-    pproto_set_encoding(g_session_state.client_encoding);
+    pproto_server_set_encoding(g_session_state.client_encoding);
 
-    if(pproto_send_server_hello() != 0)
+    if(pproto_server_send_server_hello() != 0)
     {
         return 1;
     }
 
-    if(pproto_send_auth_request() != 0)
+    if(pproto_server_send_auth_request() != 0)
     {
         return 1;
     }
 
     while(1)
     {
-        res = pproto_read_auth(&cred);
+        switch(pproto_server_read_msg_type())
+        {
+            case PPROTO_GOODBYE_MSG:
+                return 2;
+                break;
+            case PPROTO_AUTH_MSG:
+                break;
+            default:
+                return 1;
+                break;
+        }
+
+        res = pproto_server_read_auth(&cred);
         sleep(1);
         if(0 == res)
         {
@@ -91,13 +119,13 @@ sint8 session_auth_client()
             return 1;
         }
 
-        if(pproto_send_auth_responce(0) != 0)
+        if(pproto_server_send_auth_responce(0) != 0)
         {
             return 1;
         }
     }
 
-    if(pproto_send_auth_responce(1))
+    if(pproto_server_send_auth_responce(1))
     {
         return 1;
     }
@@ -111,7 +139,7 @@ sint8 session_enter_repl()
 
     while(1)
     {
-        msg_type = pproto_read_msg_type();
+        msg_type = pproto_server_read_msg_type();
         logger_debug(_ach("session, message received, type: %d"), (int)msg_type);
         if(PPROTO_MSG_TYPE_ERR == msg_type)
         {
@@ -122,14 +150,20 @@ sint8 session_enter_repl()
         {
             case PPROTO_SQL_REQUEST_MSG:
                 // TODO: process sql request
+                parser_parse();
+
+                execution_plan();
+
+                execution_exec();
+
                 break;
             case PPROTO_GOODBYE_MSG:
-                pproto_send_goodbye();
+                pproto_server_send_goodbye();
                 return 0;
             default:
-                pproto_send_error(ERROR_PROTOCOL_VIOLATION);
-                logger_warn(_ach("session, unexpected message type received: %d"), (int)msg_type);
-                break;
+                pproto_server_send_error(ERROR_PROTOCOL_VIOLATION);
+                logger_error(_ach("session, unexpected message type received: %d"), (int)msg_type);
+                return 1;
         }
     }
 
@@ -141,11 +175,17 @@ sint8 session_create(int client_sock)
     g_session_state.client_sock = client_sock;
 
     encoding_init();
-    pproto_set_sock(g_session_state.client_sock);
+    pproto_server_set_sock(g_session_state.client_sock);
 
-    if(session_auth_client() != 0) return 1;
-
-    if(session_enter_repl() != 0) return 1;
+    switch(session_auth_client())
+    {
+        case 1:     // error
+            return 1;
+        case 0:     // client authenticted
+            return session_enter_repl();
+        default:    // session closed without error
+            return 0;
+    }
 
     return 0;
 }
