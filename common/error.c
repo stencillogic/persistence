@@ -7,9 +7,9 @@ achar *g_error_msg[] =
     _ach("ECODE=00001: no error"),
     _ach("ECODE=00002: session initialization failed"),
     _ach("ECODE=00003: protocol violation"),
-    _ach("ecode=00004: numeric overflow"),
-    _ach("ecode=00005: division by zero"),
-    _ach("ecode=00006: invalid decimal format")
+    _ach("ECODE=00004: numeric overflow"),
+    _ach("ECODE=00005: division by zero"),
+    _ach("ECODE=00006: invalid decimal format")
 };
 
 error_code g_current_error_code = 0;

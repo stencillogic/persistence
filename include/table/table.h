@@ -4,12 +4,19 @@
 #include "defs/defs.h"
 #include "common/decimal.h"
 
+
+// dictionary structures and associated limits
+
+
 #define MAX_TABLE_COLUMNS                   (1024)            // 2^16 is the max value here
 #define MAX_TABLE_NAME_LEN                  (256)
 #define MAX_TABLE_COL_NAME_LEN              (256)
 #define MAX_CONSTRAINT_NAME_LEN             (256)
 #define MAX_CHECK_CONSTRAINT_EXPRESSION_LEN (8192)
 #define MAX_DEFAULT_VALUE_CHAR_LEN          (256)
+#define MAX_VARCHAR_LENGTH                  (1024L * 1024L * 1024L * 2L)
+
+
 
 #define COLUMN_DATA_TYPE_NUM                (10)
 
@@ -63,7 +70,7 @@ typedef struct _fk_constraint_col_desc    // constraint-column correspondence
 typedef struct _check_constraint_details_desc
 {
     uint32  table_constraint_desc_id;
-    uint8    expression[MAX_CHECK_CONSTRAINT_EXPRESSION_LEN];    // TODO: replace with expression tree
+    uint8   expression[MAX_CHECK_CONSTRAINT_EXPRESSION_LEN];    // TODO: replace with expression tree
 } check_constraint_details_desc;
 
 typedef struct _col_default_value_desc

@@ -85,6 +85,10 @@ sint8 pproto_client_read_timestamp_with_tz_value(handle ss, uint64 *ts, sint16 *
 // return next message type or -1 on error
 pproto_msg_type pproto_client_read_msg_type(handle ss);
 
+// check if htere is data ready to read
+// return 0 on no data, 1 on data ready to read, -1 on error
+sint8 pproto_client_poll(handle ss);
+
 // read authentication status: success if auth_status = 1, failure otherwise
 // return 0 on success, non 0 otherwise
 sint8 pproto_client_read_auth_responce(handle ss, uint8 *auth_status);

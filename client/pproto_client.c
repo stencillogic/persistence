@@ -709,3 +709,19 @@ sint8 pproto_client_read_server_hello(handle ss, uint16 *vmajor, uint16 *vminor)
 
     return 0;
 }
+
+sint8 pproto_client_poll(handle ss)
+{
+    pproto_client_state *state = (pproto_client_state *)ss;
+
+    fd_set fdset;
+    struct timeval tv;
+
+    FD_ZERO(&fdset);
+    FD_SET(state->sock, &fdset);
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+
+    return select(1, &fdset, NULL, NULL, &tv);
+}

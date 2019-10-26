@@ -1,30 +1,166 @@
 #ifndef _LEXER_H
 #define _LEXER_H
 
-typedef enum _sql_lexem_type
-{
-    RESERVED_WORD,  // e.g. SELECT, CREATE, etc.
-    IDENTIFIER,     // e.g. column name
-    BIND_VAR,       // bind variable
-    LITERAL,        // e.g. string or number
-    TOKEN           // e.g. "(" ";" "+"
-} sql_lexem_type;
 
-typedef struct _sql_lexem
-{
-    sql_lexem_type type;
-    wchar          *value;
-    uint32         value_size;
-} sql_lexem;
+// lexical analysator
 
-// create and return lexical tokenizer
+
+#include "defs/defs.h"
+#include "common/encoding.h"
+#include "common/decimal.h"
+
+
+#define LEXER_MAX_IDENTIFIER_LEN    (256)
+
+
+typedef enum _lexer_lexem_type
+{
+    LEXEM_TYPE_RESERVED_WORD,   // e.g. SELECT, CREATE, etc.
+    LEXEM_TYPE_IDENTIFIER,      // e.g. column name
+    LEXEM_TYPE_BIND_VAR,        // bind variable
+    LEXEM_TYPE_STR_LITERAL,     // e.g. string
+    LEXEM_TYPE_NUM_LITERAL,     // e.g. number
+    LEXEM_TYPE_TOKEN,           // e.g. "(" ";" "+"
+    LEXEM_TYPE_EOS              // end of statement
+} lexer_lexem_type;
+
+
+typedef enum _lexer_reserved_word
+{
+    LEXER_RESERVED_WORD_ACTION,
+    LEXER_RESERVED_WORD_ADD,
+    LEXER_RESERVED_WORD_ALL,
+    LEXER_RESERVED_WORD_ALTER,
+    LEXER_RESERVED_WORD_AND,
+    LEXER_RESERVED_WORD_AS,
+    LEXER_RESERVED_WORD_ASC,
+    LEXER_RESERVED_WORD_BY,
+    LEXER_RESERVED_WORD_CASCADE,
+    LEXER_RESERVED_WORD_CHARACTER,
+    LEXER_RESERVED_WORD_CHECK,
+    LEXER_RESERVED_WORD_COLUMN,
+    LEXER_RESERVED_WORD_CONSTRAINT,
+    LEXER_RESERVED_WORD_CREATE,
+    LEXER_RESERVED_WORD_CROSS,
+    LEXER_RESERVED_WORD_DATABASE,
+    LEXER_RESERVED_WORD_DATE,
+    LEXER_RESERVED_WORD_DECIMAL,
+    LEXER_RESERVED_WORD_DEFAULT,
+    LEXER_RESERVED_WORD_DELETE,
+    LEXER_RESERVED_WORD_DESC,
+    LEXER_RESERVED_WORD_DISTINCT,
+    LEXER_RESERVED_WORD_DOUBLE,
+    LEXER_RESERVED_WORD_DROP,
+    LEXER_RESERVED_WORD_EXCEPT,
+    LEXER_RESERVED_WORD_FIRST,
+    LEXER_RESERVED_WORD_FLOAT,
+    LEXER_RESERVED_WORD_FOREIGN,
+    LEXER_RESERVED_WORD_FROM,
+    LEXER_RESERVED_WORD_FULL,
+    LEXER_RESERVED_WORD_GROUP,
+    LEXER_RESERVED_WORD_HAVING,
+    LEXER_RESERVED_WORD_INNER,
+    LEXER_RESERVED_WORD_INSERT,
+    LEXER_RESERVED_WORD_INTEGER,
+    LEXER_RESERVED_WORD_INTERSECT,
+    LEXER_RESERVED_WORD_INTO,
+    LEXER_RESERVED_WORD_IS,
+    LEXER_RESERVED_WORD_JOIN,
+    LEXER_RESERVED_WORD_KEY,
+    LEXER_RESERVED_WORD_LAST,
+    LEXER_RESERVED_WORD_LEFT,
+    LEXER_RESERVED_WORD_MODIFY,
+    LEXER_RESERVED_WORD_NO,
+    LEXER_RESERVED_WORD_NOT,
+    LEXER_RESERVED_WORD_NULL,
+    LEXER_RESERVED_WORD_NULLS,
+    LEXER_RESERVED_WORD_NUMBER,
+    LEXER_RESERVED_WORD_ON,
+    LEXER_RESERVED_WORD_OR,
+    LEXER_RESERVED_WORD_ORDER,
+    LEXER_RESERVED_WORD_OUTER,
+    LEXER_RESERVED_WORD_PRECISION,
+    LEXER_RESERVED_WORD_PRIMARY,
+    LEXER_RESERVED_WORD_REFERENCES,
+    LEXER_RESERVED_WORD_RENAME,
+    LEXER_RESERVED_WORD_RESTRICT,
+    LEXER_RESERVED_WORD_RIGHT,
+    LEXER_RESERVED_WORD_SELECT,
+    LEXER_RESERVED_WORD_SET,
+    LEXER_RESERVED_WORD_SMALLINT,
+    LEXER_RESERVED_WORD_TABLE,
+    LEXER_RESERVED_WORD_TIMESTAMP,
+    LEXER_RESERVED_WORD_TO,
+    LEXER_RESERVED_WORD_UNION,
+    LEXER_RESERVED_WORD_UNIQUE,
+    LEXER_RESERVED_WORD_UPDATE,
+    LEXER_RESERVED_WORD_VALUES,
+    LEXER_RESERVED_WORD_VARCHAR,
+    LEXER_RESERVED_WORD_VARYING,
+    LEXER_RESERVED_WORD_WHERE,
+} lexer_reserved_word;
+
+
+typedef enum _lexer_token
+{
+    LEXER_TOKEN_ASTERISK,   // *
+    LEXER_TOKEN_COMMA,      // ,
+    LEXER_TOKEN_PLUS,       // +
+    LEXER_TOKEN_MINUS,      // -
+    LEXER_TOKEN_SLASH,      // /
+    LEXER_TOKEN_EQ,         // =
+    LEXER_TOKEN_LT,         // <
+    LEXER_TOKEN_GT,         // >
+    LEXER_TOKEN_LPAR,       // (
+    LEXER_TOKEN_RPAR,       // )
+    LEXER_TOKEN_DOT,        // .
+} lexer_token;
+
+
+typedef struct _lexer_lexem
+{
+    lexer_lexem_type    type;
+    union
+    {
+        lexer_reserved_word reserved_word;
+        lexer_token         token;
+        uint8               identifier[LEXER_MAX_IDENTIFIER_LEN];
+        void                *str_literal;
+        decimal             num_literal;
+        sint64              integer;
+    };
+    uint16              identifier_len; // length of identifier
+    uint64              line;           // lexem line
+    uint64              col;            // lexem start position in line
+} lexer_lexem;
+
+
+// return size of the buffer for lexer initialization
+size_t lexer_get_allocation_size();
+
+
+// create and return lexical tokenizer instance for parsing strings of certain encoding
 // returns NULL on error
-handle lexer_create(handle stream);
+handle lexer_create(void *buf, size_t buf_sz, encoding enc);
+
 
 // read and return next token
-sql_lexem lexer_next(handle lexer);
+// return 0 on success, non-0 on error
+sint8 lexer_next(handle lexer, lexer_lexem *lexem);
 
-// returns position of last read lexem
-uint64 lexer_pos(handle lexer);
+
+// read and return last read token
+// return 0 on success, non-0 on error
+sint8 lexer_current(handle lexer, lexer_lexem *lexem);
+
+
+// if set = 1 make lexer parse only integers, otherwise full decimal is parsed (default)
+void lexer_num_mode_integer(handle lexer, uint8 set);
+
+
+// destroy lexer
+// return 0 on success, non-0 on error
+sint8 lexer_destroy(handle lexer);
+
 
 #endif

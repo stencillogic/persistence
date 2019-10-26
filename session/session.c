@@ -149,13 +149,10 @@ sint8 session_enter_repl()
         switch(msg_type)
         {
             case PPROTO_SQL_REQUEST_MSG:
-                // TODO: process sql request
-                parser_parse();
-
-                execution_plan();
-
-                execution_exec();
-
+                if(execution_exec_statement())
+                {
+                    return 1;
+                }
                 break;
             case PPROTO_GOODBYE_MSG:
                 pproto_server_send_goodbye();

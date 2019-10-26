@@ -115,9 +115,10 @@ Typical message flow:
 3. Client authenticates with sending <auth_message> to server.
 4. Server checks client's credentials and sends <auth_responce_message> to client.
 5. If authentication was successful client can send <sql_request_message> or <goodbye_message> to server.
-6. Server executes sql and sends <progress_message> during execution or <recordset_message> or <success_message> when execution completes to the client.
-7 .During execution of <sql_request_message> by server client can send <cancel_message>, server will stop execution of the request and will send <success_message> to confirm execution was stopped.
-8. If client sends <goodbye_message> server answers with <goodbye_message> and closes connection.
+6. Server can send error message while parsing and checking sql from the client. Client can poll server for error while sending large sql query.
+7. Server executes sql and sends <progress_message> during execution or <recordset_message> or <success_message> when execution completes to the client.
+8 .During execution of <sql_request_message> by server client can send <cancel_message>, server will stop execution of the request and will send <success_message> to confirm execution was stopped.
+9. If client sends <goodbye_message> server answers with <goodbye_message> and closes connection.
 
 Client's <auth_message> semantics:
 <user_name> must not be longer than 64 characters long.

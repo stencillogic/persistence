@@ -439,14 +439,29 @@ dbclient_return_code dbclient_statement(handle session, const uint8 *buf, uint32
         return DBCLIENT_RETURN_ERROR;
     }
 
-    if(pproto_client_send_sql_stmt(ss->pproto_client_session, buf, len) != 0)
+    sint8 res = pproto_client_poll(ss->pproto_client_session);
+    if(0 == res)
     {
-        dbclient_pproto_client_error(ss, "Sending statement text to server");
-        dbclient_spill_errmes(ss);
+        if(pproto_client_send_sql_stmt(ss->pproto_client_session, buf, len) != 0)
+        {
+            dbclient_pproto_client_error(ss, "Sending statement text to server");
+            dbclient_spill_errmes(ss);
+            return DBCLIENT_RETURN_ERROR;
+        }
+
+        return DBCLIENT_RETURN_SUCCESS;
+    }
+    else if(res == 1)
+    {
+        pproto_msg_type msg_type = pproto_client_read_msg_type(ss->pproto_client_session);
+        dbclient_process_err_msg_type(ss, msg_type, "Reading server reply");
+        dbclient_close_connection(ss);
         return DBCLIENT_RETURN_ERROR;
     }
 
-    return DBCLIENT_RETURN_SUCCESS;
+    dbclient_pproto_client_error(ss, "Polling for server reply");
+    dbclient_spill_errmes(ss);
+    return DBCLIENT_RETURN_ERROR;
 }
 
 

@@ -2,15 +2,12 @@
 #define _EXECUTION_H
 
 
-// statement execution
+// statement execution driver
 
 
 #include "defs/defs.h"
 
-// prepare execution plan for statement
-sint8 execution_plan();
-
 // execute statement
-sint8 execution_exec();
+sint8 execution_exec_statement();
 
 #endif

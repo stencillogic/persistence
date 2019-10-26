@@ -27,12 +27,23 @@ other - terminals (optionally in double quotes)
 <order_by_expr_list> := <expression_with_sort> [ {, <expression_with_sort> } ]
 <expression_with_sort> := <expression> [ ASC | DESC ] [ NULLS ( FIRST | LAST ) ]
 
-<expression> := [ + | - ] <term> { [ + | - ] <term> }
-<term> := <multiplier> { [ * | / ] <multiplier> }
-<multiplier> := <literal> | <name> | "(" <expression> ")"
+<expression> := [ "+" | "-" ] <term_1> { <bin_op_1> <term_1> }
+<term_1> := <term_2> { <bin_op_2> <term_2> }
+<term_2> := <term_3> { <bin_op_3> <term_3> }
+...
+<term_8> := <literal> | <name> | NULL | "(" <expression> ")"
 
-<name> := <identifier> [ { . <identifier> } ]
-<identifier> := _ | letter [ { _ | - | letter | digit } ]
+<bin_op_1> := OR
+<bin_op_2> := AND
+<bin_op_3> := NOT
+<bin_op_4> := ( IS NULL ) | ( IS NOT NULL )
+<bin_op_5> := "=" | "<>" | ">" | ">=" | "<" | "<="
+<bin_op_6> := "+" | "-"
+<bin_op_7> := "*" | "/"
+
+
+<name> := <identifier> [ . <identifier> ]
+<identifier> := _ | letter [ { _ | letter | digit } ]
 
 <literal> := <string_literal> |
              <number_literal>
@@ -46,17 +57,17 @@ other - terminals (optionally in double quotes)
 <single_select_statement> := SELECT [ ALL | DISTINCT ] <projection>
                              [ FROM <from> ]
                              [ WHERE <conditional_expr> ]
-                             [ GROUP BY <expression_list> ]
-                             [ HAVING <predicates> ]
+                             [ GROUP BY <expression_list> [ HAVING <predicate_list> ] ]
+                             
 
-<projection> := * | <expression_list>
-<expression_list> := <named_expression> [ {, <named_expression> } ]
-<named_expression> := <expression> [ [ AS ] <name> ]
+<projection> := * | <named_expression_list>
+<named_expression_list> := <named_expression> [ {, <named_expression> } ]
+<named_expression> := <expression> [ ( AS <identifier> ) | <identifier> ]
 
-<from> := <from_item> [ ( [ INNER ] | [ CROSS ] | [ LEFT [ OUTER ] ] | [ RIGHT [ OUTER ] | FULL [ OUTER ] ] ) JOIN <from_item> [ ON <conditional_expr> ] ]
+<from> := <from_item> { [ ( [ INNER ] | [ CROSS ] | [ LEFT [ OUTER ] ] | [ RIGHT [ OUTER ] | [ FULL [ OUTER ] ] ) JOIN <from_item> [ ON <conditional_expr> ] ] }
 
-<from_item> := <name> [ [ AS ] <name> ] |
-              "(" <select_statement> ")" [ [ AS ] <name> ]
+<from_item> := <name> [ ( AS <identifier> ) | <identifier> ] |
+              "(" <select_statement> ")" [ ( AS <identifier> ) | <identifier> ]
 
 <conditional_expr> := <boolean_term> |
                       <conditional_expr> OR <boolean_term>
@@ -68,43 +79,45 @@ other - terminals (optionally in double quotes)
 <boolean_test> := <predicate> | "(" <conditional_expr> ")"
 <predicate> := <expression> ( > | < | >= | <= | = | <> ) <expression> | <expression> IS NULL
 
+<expression_list> := <expression> [ {, <expression> } ]
+<predicate_list> := <predicate> [ "," { <predicate> } ]
+
 === insert ===
 
-<insert_statement> := INSERT INTO <name> [ AS <name> ] [ "(" <name> [ { , <name> } ] ")" ] ( VALUES "(" <expression>  [ { , <expression> } ] ")" | <select_statement> )
+<insert_statement> := INSERT INTO <name> [ <colname_list> ] ( VALUES "(" <expression>  [ { , <expression> } ] ")" | <select_statement> )
+<colname_list> := "(" <identifier> [ { , <identifier> } ] ")"
+
+=== update ===
+
+<update_statement> := UPDATE <name> [ AS <identifier> ] SET <set_expression> [ { , <set_expression>  } ] [ WHERE <conditional_expr> ]
+
+<set_expression> := <name> "=" <expression>
 
 === delete ===
 
-<delete_statement> := DELETE FROM <name> [ [ AS ] <name> ] [ WHERE <conditional_expr> ]
+<delete_statement> := DELETE [ FROM ] <name> [ [ AS ] <name> ] [ WHERE <conditional_expr> ]
 
 === create ===
 
 <create_statement> := <create_table_statement> |
-                      <crate_datebase_statement>
+                      <crate_database_statement>
 
 <create_table_statement> := CREATE TABLE <name> "(" <column_list> <table_constraints> ")"
 <column_list> := <column_desc> { , <column_desc> } 
-<column_desc> := <identifier> <data_type> [ <column_constraint> ]
+<column_desc> := <identifier> <data_type> [ DEFAULT <expression> ] [ [NOT] NULL ] 
 
 <datatype> := <char_type_desc> | <numeric_type_desc> | <timestamp_type_desc> | SMALLINT | INTEGER | FLOAT | DOUBLE_PRECISION | DATE
 <char_type_desc> := ( CHARACTER VARYING | VARCHAR ) "(" <integer_literal> ")"
 <numeric_type_desc> := ( DECIMAL | NUMBER ) [ "(" <integer_literal> , <integer_literal>  ")" ]
 <timestamp_type_desc> := TIMESTAMP [ "(" <integer_literal>  ")" ]
 
-<column_constraint> := [ CONSTRAINT <identifier> ] ( 
-                       NOT NULL | 
-                       NULL | 
-                       CHECK "(" <expression> ")" | 
-                       DEFAULT <expression> | 
-                       UNIQUE | 
-                       PRIMARY KEY )
 
 <table_constraint> := CONSTRAINT <identifier> (
                       CHECK "(" <expression> ")" | 
-                      DEFAULT default_expr | 
-                      UNIQUE "(" <identifier> { , <identifier> } ")" | 
-                      PRIMARY KEY "(" <identifier> { , <identifier> } ")" |
-                      FOREIGN KEY "(" <identifier> { , <identifier> } ")" 
-                        REFERENCES <name> [ "(" <identifier> { , <identifier> } ")" ] [ ON DELETE ( RESTRICT | CASCADE | SET NULL | SET DEFAULT | NO ACTION ) ] )
+                      UNIQUE  <colname_list>  | 
+                      PRIMARY KEY <colname_list>  |
+                      FOREIGN KEY <colname_list>  
+                        REFERENCES <name> [ <colname_list>  ] [ ON DELETE ( RESTRICT | CASCADE | SET NULL | SET DEFAULT | NO ACTION ) ] )
 
 <create_database_statement> := CREATE DATABASE <identifier>
 
@@ -123,10 +136,10 @@ other - terminals (optionally in double quotes)
 
 <alter_table_statement> := ALTER TABLE <name> ( <add_column> | <modify_column> | <drop_column> | <add_constraint> | <drop_constraint> | <rename> )
 <add_column> := ADD [ COLUMN ] <identifier> <data_type> 
-<modify_column> := ( ALTER | MODIFY ) [ COLUMN ] <identifier> [ <data_type> ]  [ DEFAULT <expression> ] [ NULL | NOT NULL ]
+<modify_column> := ( ALTER | MODIFY ) [ COLUMN ] <identifier> [ <data_type> ]  [ DEFAULT <expression> ] [ [ NOT ] NULL ]
 <drop column> := DROP [ COLUMN ] <identifier>
 <add_constraint> := ADD <table_constraint>
 <drop_constraint> := DROP CONSTRAINT <identifier>
-<rename> := RENAME [ ( COLUMN | CONSTRAINT ) <identifier> TO <identifier> ] TO <identifier>
+<rename> := RENAME [ ( COLUMN | CONSTRAINT ) <identifier> ] TO <identifier>
 
 
