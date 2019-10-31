@@ -17,9 +17,10 @@ void pproto_server_set_sock(int client_sock);
 // set client encoding
 void pproto_server_set_encoding(encoding client_encoding);
 
-// sends error defined by errcode to client
+// sends error defined by errcode and additional message to client
+// msg is optional, can be NULL, expected encoding is UTF-8
 // return 0 on success, non 0 otherwise
-sint8 pproto_server_send_error(error_code errcode);
+sint8 pproto_server_send_error(error_code errcode, const achar *msg);
 
 // sends goodbye message to client
 // return 0 on success, non 0 otherwise
@@ -69,6 +70,9 @@ sint8 pproto_server_read_auth(auth_credentials *cred);
 // read sql message from client
 // return 0 on success, non 0 otherwise
 sint8 pproto_server_read_sql_request();
+
+// get the next character sent by client client in server encoding
+sint8 pproto_server_read_char(char_info *ch, sint8 *eos);
 
 // read cancel message from client
 // return 0 on success, non 0 otherwise

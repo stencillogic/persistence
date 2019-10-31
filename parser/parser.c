@@ -1,5 +1,7 @@
 #include "parser/parser.h"
 #include "common/decimal.h"
+#include "common/error.h"
+#include "common/string_literal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -16,7 +18,8 @@ struct _parser_state
     uint8           expr_op_level[17];                  // "operator -> precedence" correspondence
     parser_ast_stmt *stmt_base;                         // statement base address
     uint64          total_sz;                           // total allocated size
-    uint8           errmes[PARSER_ERRMES_BUF_SZ];       // buffer for formatted error message
+    achar           errmes[PARSER_ERRMES_BUF_SZ];       // buffer for formatted error message
+    sint8           (*report_error)(error_code error, const achar *msg);
 } g_parser_state = {.lexer = NULL, .expr_op_level = {0, 1,1, 2,2, 3,3,3,3,3,3, 4,4,4, 5, 6, 7}};
 
 
@@ -33,10 +36,13 @@ sint8 parser_report_error(const achar *msg, ...)
 {
     va_list args;
     va_start(args, msg);
-    int res_len = vsnprintf((char *)g_parser_state.errmes, PARSER_ERRMES_BUF_SZ, msg, args);
+
+    vsnprintf(g_parser_state.errmes, PARSER_ERRMES_BUF_SZ, msg, args);
+    g_parser_state.errmes[PARSER_ERRMES_BUF_SZ-1] = _ach('\0');
+
     va_end(args);
 
-    if(pproto_server_send_achar_str(g_parser_state.errmes, res_len) != 0) return -1;
+    if(g_parser_state.report_error(ERROR_SYNTAX_ERROR, g_parser_state.errmes) != 0) return -1;
 
     return 0;
 }
@@ -51,10 +57,11 @@ void parser_deallocate_stmt(parser_ast_stmt *stmt)
 
 sint8 parser_allocate_ast_el(void **ptr, size_t sz)
 {
+    // TODO: spill to disk if statement is too big to reside in memory
     void *new_base = realloc(g_parser_state.stmt_base, g_parser_state.total_sz + sz);
     if(NULL == new_base)
     {
-        if(0 != parser_report_error(_ach("Out of memory")) != 0) return -1;
+        if(0 != parser_report_error(_ach("statement is too long; out of memory")) != 0) return -1;
         return 1;
     }
 
@@ -164,7 +171,14 @@ sint8 parser_parse_expr_arg(parser_ast_expr *stmt)
     else if(g_parser_state.lexem.type == LEXEM_TYPE_STR_LITERAL)   // string
     {
         stmt->node_type = PARSER_EXPR_NODE_TYPE_STR;
-        stmt->str = g_parser_state.lexem.str_literal;
+        void *strlit_buf;
+        if((res = parser_allocate_ast_el((void **)&strlit_buf, sizeof(string_literal_alloc_sz()))) != 0) return res;
+        if((stmt->str = string_literal_create(strlit_buf)) == NULL ||
+            string_literal_move(g_parser_state.lexem.str_literal, stmt->str) != 0)
+        {
+            if(0 != parser_report_error(_ach("internal server error at line %d, column %d"), g_parser_state.lexem.line, g_parser_state.lexem.col)) return -1;
+            return -1;
+        }
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
     }
     else if(g_parser_state.lexem.type == LEXEM_TYPE_NUM_LITERAL)   // decimal
@@ -1845,12 +1859,13 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
 
 
 // parse statement
-sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer)
+sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
 {
     sint8 res;
     parser_ast_stmt *stmt = NULL;
 
     g_parser_state.lexer = lexer;
+    g_parser_state.report_error = pi.report_error;
 
     if((res = parser_allocate_ast_el((void **)&stmt, sizeof(*stmt))) != 0) return res;
     *pstmt = stmt;

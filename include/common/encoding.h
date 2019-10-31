@@ -1,12 +1,16 @@
 #ifndef _ENCODING_H
 #define _ENCODING_H
 
+
 // work with encoding: character operations, validation, conversion, etc.
+
 
 #include "defs/defs.h"
 
+
 #define ENCODING_MAXCHAR_LEN 4      // longest possible character in all supported encodings
 #define ENCODING_NUM 3              // number of encodings in encoding enum
+
 
 typedef enum _encoding
 {
@@ -53,6 +57,7 @@ encoding_char_len_fun encoding_get_char_len_fun(encoding enc);
 
 // convert character from encoding to encoding
 // if src or dst is invalid behaviour is undetermined
+// if src can't be converted to dst, then dst->state = CHAR_STATE_INVALID
 typedef void (*encoding_conversion_fun)(const_char_info *src, char_info *dst);
 
 // get conversion function
@@ -81,5 +86,6 @@ encoding encoding_idbyname(const achar* name);
 
 // return 1 if encodings are mutually convertable, 0 otherwise
 sint8 encoding_is_convertable(encoding enc1, encoding enc2);
+
 
 #endif

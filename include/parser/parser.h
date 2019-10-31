@@ -572,9 +572,15 @@ typedef struct _parser_ast_stmt
 /////////////////////////////////
 
 
+typedef struct _parser_interface
+{
+    sint8           (*report_error)(error_code error, const achar *msg);
+} parser_interface;
+
+
 // parse statement into AST and return pointer to it
 // return 0 on success, -1 on error, 1 on syntax error
-sint8 parser_parse(parser_ast_stmt **stmt, handle lexer);
+sint8 parser_parse(parser_ast_stmt **stmt, handle lexer, parser_interface pi);
 
 
 // deallocate statement

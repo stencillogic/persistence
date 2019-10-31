@@ -8,6 +8,7 @@
 #include "defs/defs.h"
 #include "common/encoding.h"
 #include "common/decimal.h"
+#include "common/error.h"
 
 
 #define LEXER_MAX_IDENTIFIER_LEN    (256)
@@ -25,9 +26,12 @@ typedef enum _lexer_lexem_type
 } lexer_lexem_type;
 
 
+#define LEXER_RESERVED_WORD_NUM     (71)
+
+// the list must be sorted by ASCII code number (alphabetically)
 typedef enum _lexer_reserved_word
 {
-    LEXER_RESERVED_WORD_ACTION,
+    LEXER_RESERVED_WORD_ACTION = 1,
     LEXER_RESERVED_WORD_ADD,
     LEXER_RESERVED_WORD_ALL,
     LEXER_RESERVED_WORD_ALTER,
@@ -103,17 +107,38 @@ typedef enum _lexer_reserved_word
 
 typedef enum _lexer_token
 {
-    LEXER_TOKEN_ASTERISK,   // *
-    LEXER_TOKEN_COMMA,      // ,
-    LEXER_TOKEN_PLUS,       // +
-    LEXER_TOKEN_MINUS,      // -
-    LEXER_TOKEN_SLASH,      // /
-    LEXER_TOKEN_EQ,         // =
-    LEXER_TOKEN_LT,         // <
-    LEXER_TOKEN_GT,         // >
-    LEXER_TOKEN_LPAR,       // (
-    LEXER_TOKEN_RPAR,       // )
-    LEXER_TOKEN_DOT,        // .
+    LEXER_TOKEN_EXCL,               //   !
+    LEXER_TOKEN_DOUBLE_QUOTE,       //   "
+    LEXER_TOKEN_NUMBER,             //   #
+    LEXER_TOKEN_DOLLAR,             //   $
+    LEXER_TOKEN_PERCENT,            //   %
+    LEXER_TOKEN_AMPERSAND,          //   &
+    LEXER_TOKEN_SINGLE_QUOTE,       //   '
+    LEXER_TOKEN_LPAR,               //   (
+    LEXER_TOKEN_RPAR,               //   )
+    LEXER_TOKEN_ASTERISK,           //   *
+    LEXER_TOKEN_PLUS,               //   +
+    LEXER_TOKEN_COMMA,              //   ,
+    LEXER_TOKEN_MINUS,              //   -
+    LEXER_TOKEN_DOT,                //   .
+    LEXER_TOKEN_SLASH,              //   /
+    LEXER_TOKEN_COLON,              //   :
+    LEXER_TOKEN_SEMICOLON,          //   ;
+    LEXER_TOKEN_LT,                 //   <
+    LEXER_TOKEN_EQ,                 //   =
+    LEXER_TOKEN_GT,                 //   >
+    LEXER_TOKEN_QMARK,              //   ?
+    LEXER_TOKEN_AT,                 //   @
+    LEXER_TOKEN_LBRAK,              //   [
+    LEXER_TOKEN_BSLASH,             //   back slash
+    LEXER_TOKEN_RBRACK,             //   ]
+    LEXER_TOKEN_CARET,              //   ^
+    LEXER_TOKEN_UNDERSCORE,         //   _
+    LEXER_TOKEN_ACCENT,             //   `
+    LEXER_TOKEN_LBRACE,             //   {
+    LEXER_TOKEN_BAR,                //   |
+    LEXER_TOKEN_RBRACE,             //   }
+    LEXER_TOKEN_TILDE,              //   ~
 } lexer_token;
 
 
@@ -125,7 +150,7 @@ typedef struct _lexer_lexem
         lexer_reserved_word reserved_word;
         lexer_token         token;
         uint8               identifier[LEXER_MAX_IDENTIFIER_LEN];
-        void                *str_literal;
+        handle              str_literal;
         decimal             num_literal;
         sint64              integer;
     };
@@ -135,17 +160,28 @@ typedef struct _lexer_lexem
 } lexer_lexem;
 
 
+// lexer interface
+typedef struct _lexer_interface
+{
+    // function to fetch next char
+    sint8 (*next_char)(char_info *ch, sint8 *eos);
+
+    // function to report error
+    sint8 (*report_error)(error_code error, const achar *msg);
+} lexer_interface;
+
+
 // return size of the buffer for lexer initialization
 size_t lexer_get_allocation_size();
 
 
 // create and return lexical tokenizer instance for parsing strings of certain encoding
 // returns NULL on error
-handle lexer_create(void *buf, size_t buf_sz, encoding enc);
+handle lexer_create(void *buf, encoding enc, handle str_literal, lexer_interface li);
 
 
 // read and return next token
-// return 0 on success, non-0 on error
+// return 0 on success, 1 on syntax error, -1 on error
 sint8 lexer_next(handle lexer, lexer_lexem *lexem);
 
 
@@ -156,11 +192,6 @@ sint8 lexer_current(handle lexer, lexer_lexem *lexem);
 
 // if set = 1 make lexer parse only integers, otherwise full decimal is parsed (default)
 void lexer_num_mode_integer(handle lexer, uint8 set);
-
-
-// destroy lexer
-// return 0 on success, non-0 on error
-sint8 lexer_destroy(handle lexer);
 
 
 #endif

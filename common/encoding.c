@@ -27,12 +27,21 @@ void encoding_ascii_to_utf8(const_char_info *src, char_info *dst)
 {
     dst->chr[0] = (src->chr[0] > 0x7Fu) ? 0x3Fu : src->chr[0];
     dst->length = 1;
+    dst->state = CHAR_STATE_COMPLETE;
 }
 
 void encoding_utf8_to_ascii(const_char_info *src, char_info *dst)
 {
-    dst->chr[0] = (0x00u == (0x80u & src->chr[0])) ? src->chr[0] : 0x3Fu;
-    dst->length = 1;
+    if(0x00u == (0x80u & src->chr[0]))
+    {
+        dst->length = 1;
+        dst->chr[0] =  src->chr[0];
+        dst->state = CHAR_STATE_COMPLETE;
+    }
+    else
+    {
+        dst->state = CHAR_STATE_INVALID;
+    }
 }
 
 void encoding_zero_conversion(const_char_info *src, char_info *dst)
@@ -64,7 +73,7 @@ void encoding_utf8_char_len(const_char_info *chr)
 
 
 //
-// Building charater from byte stream functions
+// Building charater from byte stream
 //
 
 void encoding_build_utf8_char(char_info *chr, uint8 byte)

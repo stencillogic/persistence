@@ -4,6 +4,9 @@
 #include "auth/auth_server.h"
 #include "parser/parser.h"
 #include "execution/execution.h"
+#include "parser/lexer.h"
+#include "common/string_literal.h"
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -38,10 +41,11 @@
 //  g - incorrect message
 
 struct {
-    int client_sock;
-    encoding client_encoding;
-    encoding server_encoding;
-    uint32 user_id;
+    int         client_sock;
+    encoding    client_encoding;
+    encoding    server_encoding;
+    uint32      user_id;
+    handle      lexer;
 } g_session_state = {-1, ENCODING_UNKNOWN, ENCODING_UNKNOWN, 0};
 
 encoding session_encoding()
@@ -149,7 +153,7 @@ sint8 session_enter_repl()
         switch(msg_type)
         {
             case PPROTO_SQL_REQUEST_MSG:
-                if(execution_exec_statement())
+                if(execution_exec_statement(g_session_state.lexer))
                 {
                     return 1;
                 }
@@ -158,10 +162,33 @@ sint8 session_enter_repl()
                 pproto_server_send_goodbye();
                 return 0;
             default:
-                pproto_server_send_error(ERROR_PROTOCOL_VIOLATION);
+                pproto_server_send_error(ERROR_PROTOCOL_VIOLATION, NULL);
                 logger_error(_ach("session, unexpected message type received: %d"), (int)msg_type);
                 return 1;
         }
+    }
+
+    return 0;
+}
+
+sint8 session_create_lexer()
+{
+    handle str_literal = string_literal_create(malloc(string_literal_alloc_sz()));
+    if(!str_literal)
+    {
+        logger_error(_ach("session, lexer creation failed; out of memory"));
+        return -1;
+    }
+
+    lexer_interface li;
+    li.next_char = pproto_server_read_char;
+    li.report_error = pproto_server_send_error;
+
+    g_session_state.lexer = lexer_create(malloc(lexer_get_allocation_size()), g_session_state.server_encoding, str_literal, li);
+    if(!g_session_state.lexer)
+    {
+        logger_error(_ach("session, lexer creation failed; out of memory"));
+        return -1;
     }
 
     return 0;
@@ -173,6 +200,10 @@ sint8 session_create(int client_sock)
 
     encoding_init();
     pproto_server_set_sock(g_session_state.client_sock);
+
+    // TODO: connect to tipi and determine server encoding
+
+    if(session_create_lexer() != 0) return 1;
 
     switch(session_auth_client())
     {

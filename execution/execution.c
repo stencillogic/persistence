@@ -1,4 +1,7 @@
 #include "execution/execution.h"
+#include "session/pproto_server.h"
+#include "parser/parser.h"
+#include "parser/lexer.h"
 
 // statement execution depends on statement type
 // select:
@@ -22,10 +25,13 @@
 
 
 // execute statement
-sint8 execution_exec_statement()
+sint8 execution_exec_statement(handle lexer)
 {
-    parser_ast ast;
-    if(parser_parse(&ast))
+    parser_ast_stmt *stmt;
+    parser_interface pi;
+    pi.report_error = pproto_server_send_error;
+
+    if(parser_parse(&stmt, lexer, pi))
     {
         return 1;
     }
