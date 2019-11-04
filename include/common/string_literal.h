@@ -29,5 +29,10 @@ sint8 string_literal_append_char(handle sh, uint8 *buf, uint32 sz);
 // return 0 on success, non-0 on error
 sint8 string_literal_move(handle from, handle to);
 
+// read data of size sz to buf from string literal
+// upon completion sz is set to the number of bytes read
+// return 0 on success, non-0 on error
+sint8 string_literal_read(handle sh, uint8 *buf, uint64 *sz);
+
 
 #endif

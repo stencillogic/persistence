@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <stdlib.h>
 
+
 int prepare_col_desc(uint8 *buf, uint8 dt_magic, uint64 len, uint8 p, uint8 s, const char *alias, uint8 nullable)
 {
     uint32 l = strlen(alias);
@@ -462,7 +463,6 @@ int test_pproto_client_functions()
     if(buf[0] != PPROTO_GOODBYE_MESSAGE) return __LINE__;
 
     if(NULL == pproto_client_last_error_msg(ss)) return __LINE__;
-
 
     if(0 != pproto_client_poll(ss)) return __LINE__;
     buf[0] = 1;

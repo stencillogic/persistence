@@ -61,7 +61,7 @@ sint8 parser_allocate_ast_el(void **ptr, size_t sz)
     void *new_base = realloc(g_parser_state.stmt_base, g_parser_state.total_sz + sz);
     if(NULL == new_base)
     {
-        if(0 != parser_report_error(_ach("statement is too long; out of memory")) != 0) return -1;
+        if(0 != parser_report_error(_ach("statement is too long; out of memory"))) return -1;
         return 1;
     }
 
@@ -117,7 +117,7 @@ sint8 parser_parse_name(parser_ast_name *stmt)
         return 1;
     }
 
-    if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_DOT)
+    if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_DOT)
     {
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
@@ -268,27 +268,27 @@ sint8 parser_parse_expr_op(parser_expr_op_type *operator)
     }
     else if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD)
     {
-        if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_IS)
+        if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_IS)
         {
             op = PARSER_EXPR_OP_TYPE_IS;
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-            if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.token == LEXER_RESERVED_WORD_NOT)
+            if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_NOT)
             {
                 op = PARSER_EXPR_OP_TYPE_IS_NOT;
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
         }
-        else if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_NOT)
+        else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_NOT)
         {
             op = PARSER_EXPR_OP_TYPE_NOT;
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         }
-        else if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_AND)
+        else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_AND)
         {
             op = PARSER_EXPR_OP_TYPE_AND;
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         }
-        else if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_OR)
+        else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_OR)
         {
             op = PARSER_EXPR_OP_TYPE_OR;
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
@@ -421,13 +421,12 @@ sint8 parser_parse_expr(parser_ast_expr *stmt)
 // alias: [ AS <alias> | <alias> ]
 sint8 parser_parse_optional_alias(uint8 *alias, uint16 *alias_len)
 {
-    sint8 res, as = 0;
+    sint8 res;
 
     *alias_len = 0;
 
-    if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.token == LEXER_RESERVED_WORD_AS)
+    if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_AS)
     {
-        as = 1;
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
     }
 
@@ -514,7 +513,7 @@ sint8 parser_parse_from(parser_ast_from *stmt)
         if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_LPAR)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-            if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.token == LEXER_RESERVED_WORD_SELECT)
+            if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_SELECT)
             {
                 stmt->type = PARSER_FROM_TYPE_SUBQUERY;
 
@@ -567,7 +566,7 @@ sint8 parser_parse_from(parser_ast_from *stmt)
             // not first run -> there is join -> read optional join condition
             if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD)
             {
-                if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_ON)
+                if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_ON)
                 {
                     if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                     if((res = parser_allocate_ast_el((void **)&stmt->on_expr, sizeof(*stmt->on_expr))) != 0) return res;
@@ -579,27 +578,27 @@ sint8 parser_parse_from(parser_ast_from *stmt)
         // determine join type
         if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD)
         {
-            if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_INNER)
+            if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_INNER)
             {
                 stmt->join_type = PARSER_JOIN_TYPE_INNER;
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
-            else if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_CROSS)
+            else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_CROSS)
             {
                 stmt->join_type = PARSER_JOIN_TYPE_CROSS;
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
-            else if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_LEFT)
+            else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_LEFT)
             {
                 stmt->join_type = PARSER_JOIN_TYPE_LEFT;
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
-            else if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_RIGHT)
+            else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_RIGHT)
             {
                 stmt->join_type = PARSER_JOIN_TYPE_RIGHT;
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
-            else if(g_parser_state.lexem.token == LEXER_RESERVED_WORD_FULL)
+            else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_FULL)
             {
                 stmt->join_type = PARSER_JOIN_TYPE_FULL;
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
@@ -610,13 +609,13 @@ sint8 parser_parse_from(parser_ast_from *stmt)
             stmt->join_type == PARSER_JOIN_TYPE_RIGHT ||
             stmt->join_type == PARSER_JOIN_TYPE_FULL)
         {
-            if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.token == LEXER_RESERVED_WORD_OUTER)
+            if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_OUTER)
             {
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
         }
 
-        if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.token == LEXER_RESERVED_WORD_JOIN)
+        if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_JOIN)
         {
             if(stmt->join_type == PARSER_JOIN_TYPE_NONE)
             {
@@ -767,7 +766,7 @@ sint8 parser_parse_order_by(parser_ast_order_by *stmt)
         }
 
         // comma
-        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_COMMA)
+        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         }
@@ -899,14 +898,14 @@ sint8 parser_parse_optional_enclosed_colname_list(parser_ast_colname_list **pstm
     sint8 res;
     parser_ast_colname_list *stmt;
 
-    if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_LPAR)
+    if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_LPAR)
     {
         // column list
         if((res = parser_allocate_ast_el((void **)&stmt, sizeof(*stmt))) != 0) return res;
         *pstmt = stmt;
         if((res = parser_parse_colname_list(stmt)) != 0) return res;
 
-        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_RPAR)
+        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         }
@@ -926,12 +925,12 @@ sint8 parser_parse_enclosed_colname_list(parser_ast_colname_list *stmt)
 {
     sint8 res;
 
-    if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_LPAR)
+    if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_LPAR)
     {
         // column list
         if((res = parser_parse_colname_list(stmt)) != 0) return res;
 
-        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_RPAR)
+        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         }
@@ -1067,7 +1066,7 @@ sint8 parser_parse_update(parser_ast_update *stmt)
         if((res = parser_parse_name(&set_list->column)) != 0) return res;
 
         // =
-        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_EQ)
+        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_EQ)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         }
@@ -1081,7 +1080,7 @@ sint8 parser_parse_update(parser_ast_update *stmt)
         if((res = parser_parse_expr(&set_list->expr)) != 0) return res;
 
         // comma
-        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_COMMA)
+        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             if((res = parser_allocate_ast_el((void **)&set_list->next, sizeof(*set_list->next))) != 0) return res;
@@ -1174,11 +1173,11 @@ sint8 parser_parse_constr_body(parser_ast_constr *stmt)
     {
         stmt->type = PARSER_CONSTRAINT_TYPE_CHECK;
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_LPAR)
+        if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_LPAR)
         {
             if((res = parser_parse_expr(&stmt->expr)) != 0) return res;
 
-            if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.reserved_word == LEXER_TOKEN_RPAR)
+            if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
             {
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
@@ -1866,6 +1865,8 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
 
     g_parser_state.lexer = lexer;
     g_parser_state.report_error = pi.report_error;
+
+    if(lexer_reset(lexer) != 0) return -1;
 
     if((res = parser_allocate_ast_el((void **)&stmt, sizeof(*stmt))) != 0) return res;
     *pstmt = stmt;

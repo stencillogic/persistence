@@ -46,7 +46,7 @@ struct {
     encoding    server_encoding;
     uint32      user_id;
     handle      lexer;
-} g_session_state = {-1, ENCODING_UNKNOWN, ENCODING_UNKNOWN, 0};
+} g_session_state = {-1, ENCODING_UNKNOWN, ENCODING_UNKNOWN, 0, NULL};
 
 encoding session_encoding()
 {
@@ -78,8 +78,10 @@ sint8 session_auth_client()
     }
 
     if(0 == g_session_state.client_encoding || NULL == encoding_name(g_session_state.client_encoding) ||
-        encoding_is_convertable(g_session_state.client_encoding, g_session_state.server_encoding) == 0)
+        encoding_is_convertable(g_session_state.client_encoding, g_session_state.server_encoding) == 0 ||
+        encoding_is_convertable(g_session_state.client_encoding, ENCODING_UTF8) == 0)   // source code string are UTF-8
     {
+        logger_error(_ach("session, client encoding (code %d) is not supported"), g_session_state.client_encoding);
         return 1;
     }
 

@@ -1,5 +1,4 @@
 #include "parser/lexer.h"
-#include "common/hash_map.h"
 #include "session/pproto_server.h"
 #include "common/error.h"
 #include "common/string_literal.h"
@@ -39,13 +38,13 @@ typedef struct _lexer_char
 int g_lexer_reserved_word_diap[27] =
 {
 //  A   B   C   D   E   F   G   H   I   J   K   L   M   N   O   P   Q   R   S   T   U   V   W   X   Y   Z   <top>
-    1,  8,  9, 16, 25, 26, 31, 32, 33, 39, 40, 41, 43, 44, 49, 53,  0, 55, 59, 62, 65, 68, 71,  0,  0,  0,  0
+    1,  8,  9, 16, 25, 26, 31, 32, 33, 39, 40, 41, 43, 44, 49, 53,  0, 55, 59, 62, 65, 68, 71,  0,  0,  0,  72
 };
 
 
 // the order must correspnd to the oreder of enum lexer_reserved_word
 // and sorted by ASCII code number (alphabetically)
-const achar *g_lexer_reserved_words[] =
+const achar *g_lexer_reserved_words[72] =
 {
     NULL,
     _ach("ACTION"),
@@ -290,6 +289,7 @@ lexer_token g_lexer_ascii_to_token[128] =
     0,              // 29       GS     Group Separator
     0,              // 30       RS     Record Separator
     0,              // 31       US     Unit Separator
+    0,              // 32       space     Space
     LEXER_TOKEN_EXCL,            // 33       !     Exclamation mark
     LEXER_TOKEN_DOUBLE_QUOTE,            // 34       "     Double quote
     LEXER_TOKEN_NUMBER,            // 35       #     Number
@@ -409,6 +409,11 @@ typedef struct _lexer_state
     achar errmes[LEXER_ERRMES_BUF_SZ];
 
     lexer_interface li;
+
+    // current line and column
+    uint64 line;
+    uint64 col;
+
 } lexer_state;
 
 
@@ -441,28 +446,28 @@ sint8 lexer_next_ch(lexer_state *ls)
 
     // determine type
     ls->enc_conv((const_char_info *)&ls->ch.chi, &ls->ch.ach);
-    if(ls->ch.ach.state == CHAR_STATE_COMPLETE)
+    if(eos)
+    {
+        ls->ch.type = LEXER_CHAR_TYPE_EOS;
+    }
+    else if(ls->ch.ach.state == CHAR_STATE_COMPLETE)
     {
         ls->ch.type = g_lexer_char_type[ls->ch.ach.chr[0]];
 
         if(ls->ch.ach.chr[0] == _ach('\n'))
         {
-            ls->lexem.line += 1;
-            ls->lexem.col = 1;
+            ls->line += 1;
+            ls->col = 0;
         }
         else
         {
-            ls->lexem.col += 1;
+            ls->col += 1;
         }
-    }
-    else if(eos)
-    {
-        ls->ch.type = LEXER_CHAR_TYPE_EOS;
     }
     else
     {
         ls->ch.type = LEXER_CHAR_TYPE_OTHER;
-        ls->lexem.col += 1;
+        ls->col += 1;
     }
 
     return 0;
@@ -493,15 +498,22 @@ handle lexer_create(void *buf, encoding enc, handle str_literal, lexer_interface
 
     ls->ch.chi.chr = ls->ch.ch_buf[0];
     ls->ch.ach.chr = ls->ch.ch_buf[1];
-    ls->ch.type = LEXER_CHAR_TYPE_UNDEFINED;
-    memset(&ls->lexem, 0, sizeof(ls->lexem));
-    ls->lexem.line = 1;
-    ls->lexem.col = 0;
-    ls->num_mode = 0;
-
-    if(lexer_next_ch(ls) != 0) return NULL;
 
     return (handle)ls;
+}
+
+
+// reset lexer for a new statement
+sint8 lexer_reset(handle lexer)
+{
+    lexer_state *ls = (lexer_state *)lexer;
+
+    ls->ch.type = LEXER_CHAR_TYPE_UNDEFINED;
+    ls->line = 1u;
+    ls->col = 0u;
+    ls->num_mode = 0;
+
+    return lexer_next_ch(ls);
 }
 
 
@@ -510,9 +522,18 @@ void lexer_match_rword(lexer_state *ls)
 {
     if(ls->ucase_identifier[0] == _ach('\0')) return;
 
-    achar c = ls->ucase_identifier[0];
-    int start_diap = g_lexer_reserved_word_diap[c - 64];
-    int end_diap = g_lexer_reserved_word_diap[c - 63];
+    int c = ls->ucase_identifier[0] - 65;
+    int start_diap;
+    int end_diap;
+
+    start_diap = g_lexer_reserved_word_diap[c];
+    if(start_diap == 0) return;
+
+    do
+    {
+        end_diap = g_lexer_reserved_word_diap[++c];
+    }
+    while(end_diap == 0);
 
     for(int i=start_diap; i<end_diap; i++)
     {
@@ -582,44 +603,43 @@ sint8 lexer_next_identifier(lexer_state *ls)
 
 sint8 lexer_next_num_literal(lexer_state *ls)
 {
-    sint32 pos = 0, f = 0;
-    sint8 d, e = 0;
+    sint8  m[DECIMAL_POSITIONS];
+    sint32 n = 0;
+    sint32 d;
+    sint32 e = 0;
+    sint32 exp_sign = 0;
+    sint32 i;
 
     ls->lexem.integer = 0L;
+    memset(&ls->lexem.num_literal, 0, sizeof(ls->lexem.num_literal));
     ls->lexem.num_literal.sign = DECIMAL_SIGN_POS;
+
     do
     {
         d = ls->ch.ach.chr[0] - 48;
 
-        ls->lexem.num_literal.m[pos] *= 10;
-        ls->lexem.num_literal.m[pos] += d;
-        ls->lexem.num_literal.n++;
-        f++;
-        if(f >= DECIMAL_BASE_LOG10)
-        {
-            pos++;
-            ls->lexem.num_literal.m[pos] = ls->lexem.num_literal.m[pos - 1];
-            ls->lexem.num_literal.m[pos - 1] = 0;
-            f = 0;
-        }
-        if(pos >= DECIMAL_PARTS)
-        {
-            // overflow
-            if(lexer_report_error(ls, _ach("numeric mantissa overflow at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
-            return 1;
-        }
-
         if(ls->num_mode == 1)
         {
-            ls->lexem.integer *= 10;
-            ls->lexem.integer += d;
-
-            if(ls->lexem.integer < 0)
+            if(ls->lexem.integer > (0x7FFFFFFFFFFFFFFFL - 10L) / 10L)
             {
                 // overflow
                 if(lexer_report_error(ls, _ach("integer is too big at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
                 return 1;
             }
+
+            ls->lexem.integer *= 10;
+            ls->lexem.integer += d;
+        }
+        else
+        {
+            if(n >= DECIMAL_POSITIONS)
+            {
+                // overflow
+                if(lexer_report_error(ls, _ach("numeric mantissa overflow at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
+                return 1;
+            }
+
+            m[n++] =  d;
         }
 
         if(lexer_next_ch(ls) != 0) return -1;
@@ -634,31 +654,34 @@ sint8 lexer_next_num_literal(lexer_state *ls)
     if(ls->ch.type == LEXER_CHAR_TYPE_SPECIAL && ls->ch.ach.chr[0] == _ach('.'))
     {
         if(lexer_next_ch(ls) != 0) return -1;
+
         while(ls->ch.type == LEXER_CHAR_TYPE_DIGIT)
         {
-            e++;
-            d = ls->ch.ach.chr[0] - 48;
-
-            ls->lexem.num_literal.m[pos] *= 10;
-            ls->lexem.num_literal.m[pos] += d;
-            ls->lexem.num_literal.n++;
-            f++;
-            if(f >= DECIMAL_BASE_LOG10)
-            {
-                pos++;
-                ls->lexem.num_literal.m[pos] = ls->lexem.num_literal.m[pos - 1];
-                ls->lexem.num_literal.m[pos - 1] = 0;
-                f = 0;
-            }
-            if(pos >= DECIMAL_PARTS)
+            if(n >= DECIMAL_POSITIONS)
             {
                 // overflow
                 if(lexer_report_error(ls, _ach("numeric mantissa overflow at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
                 return 1;
             }
 
+            e++;
+            m[n++] =  ls->ch.ach.chr[0] - 48;
+
             if(lexer_next_ch(ls) != 0) return -1;
         }
+    }
+
+    ls->lexem.num_literal.e = (sint8)-e;
+    ls->lexem.num_literal.n = n;
+
+    d = 1;
+    i = 0;
+    while(i < n)
+    {
+        ls->lexem.num_literal.m[i / DECIMAL_BASE_LOG10] += m[n - i - 1] * d;
+        i++;
+        d *= 10;
+        if(d == DECIMAL_BASE) d = 1;
     }
 
     if((ls->ch.type == LEXER_CHAR_TYPE_LCASE_LETTER && ls->ch.ach.chr[0] == _ach('e')) ||
@@ -668,11 +691,11 @@ sint8 lexer_next_num_literal(lexer_state *ls)
 
         if(ls->ch.type == LEXER_CHAR_TYPE_SPECIAL && ls->ch.ach.chr[0] == _ach('+'))
         {
-            f = 1;
+            exp_sign = 1;
         }
         else if(ls->ch.type == LEXER_CHAR_TYPE_SPECIAL && ls->ch.ach.chr[0] == _ach('-'))
         {
-            f = -1;
+            exp_sign = -1;
         }
         else
         {
@@ -683,25 +706,27 @@ sint8 lexer_next_num_literal(lexer_state *ls)
         if(lexer_next_ch(ls) != 0) return -1;
 
         d = 0;
-        pos = 0;
         while(ls->ch.type == LEXER_CHAR_TYPE_DIGIT)
         {
             d *= 10;
             d += ls->ch.ach.chr[0] - 48;
-            if(pos >= 3)
+            if(d > 999)
             {
                 if(lexer_report_error(ls, _ach("numeric exponent overflow at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
                 return 1;
             }
+            if(lexer_next_ch(ls) != 0) return -1;
         }
+        d *= exp_sign;
+        d += ls->lexem.num_literal.e;
 
-        if(d < -128 + e)
+        if(d < DECIMAL_MIN_EXPONENT || d > DECIMAL_MAX_EXPONENT)
         {
             if(lexer_report_error(ls, _ach("numeric exponent overflow at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
             return 1;
         }
 
-        ls->lexem.num_literal.e = d - e;
+        ls->lexem.num_literal.e = (sint8)d;
     }
 
     return 0;
@@ -710,22 +735,30 @@ sint8 lexer_next_num_literal(lexer_state *ls)
 
 sint8 lexer_next_str_literal(lexer_state *ls)
 {
+    if(string_literal_truncate(ls->lexem.str_literal) != 0) return -1;
+
     do
     {
+        if(lexer_next_ch(ls) != 0) return -1;
+
+        if(ls->ch.type == LEXER_CHAR_TYPE_SPECIAL && ls->ch.ach.chr[0] == _ach('\''))
+        {
+            if(lexer_next_ch(ls) != 0) return -1;
+            if(!(ls->ch.type == LEXER_CHAR_TYPE_SPECIAL && ls->ch.ach.chr[0] == _ach('\'')))
+            {
+                return 0;
+            }
+        }
+        else if(ls->ch.type == LEXER_CHAR_TYPE_EOS)
+        {
+            if(lexer_report_error(ls, _ach("string literal has no closing ' at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
+            return 1;
+        }
+
         if(string_literal_append_char(ls->lexem.str_literal, ls->ch.chi.chr, ls->ch.chi.length) != 0)
         {
             if(lexer_report_error(ls, _ach("string literal is too long at line %d, column %d"), ls->lexem.line, ls->lexem.col) != 0) return -1;
             return 1;
-        }
-
-        if(lexer_next_ch(ls) != 0) return -1;
-        if(ls->ch.type == LEXEM_TYPE_TOKEN && ls->ch.ach.chr[0] == _ach('\''))
-        {
-            if(lexer_next_ch(ls) != 0) return -1;
-            if(!(ls->ch.type == LEXEM_TYPE_TOKEN && ls->ch.ach.chr[0] == _ach('\'')))
-            {
-                return 0;
-            }
         }
     }
     while(1);
@@ -742,21 +775,35 @@ sint8 lexer_next(handle lexer, lexer_lexem *lexem)
     uint8 ch;
     sint8 res;
 
-    memset(&ls->lexem, 0, sizeof(ls->lexem));
+    ls->lexem.type = 0;
+    ls->lexem.identifier_len = 0;
+    ls->lexem.col = 0u;
+    ls->lexem.line = 0u;
+
+    while(ls->ch.type == LEXER_CHAR_TYPE_SPECIAL &&
+            (ls->ch.ach.chr[0] == _ach(' ')
+             || ls->ch.ach.chr[0] == _ach('\t')
+             || ls->ch.ach.chr[0] == _ach('\n')
+             || ls->ch.ach.chr[0] == _ach('\r')))
+    {
+        if((res = lexer_next_ch(ls)) != 0) return res;
+    }
 
     if(ls->ch.type == LEXER_CHAR_TYPE_LCASE_LETTER || ls->ch.type == LEXER_CHAR_TYPE_UCASE_LETTER)
     {
         ls->lexem.type = LEXEM_TYPE_IDENTIFIER;
+        ls->lexem.line = ls->line;
+        ls->lexem.col = ls->col;
         if((res = lexer_next_identifier(ls)) != 0) return res;
 
         // check for reserved word
         lexer_match_rword(ls);
-
-        return 0;
     }
     else if(ls->ch.type == LEXER_CHAR_TYPE_OTHER)
     {
         ls->lexem.type = LEXEM_TYPE_IDENTIFIER;
+        ls->lexem.line = ls->line;
+        ls->lexem.col = ls->col;
         if((res = lexer_next_identifier(ls)) != 0) return res;
     }
     else if(ls->ch.type == LEXER_CHAR_TYPE_SPECIAL)
@@ -765,34 +812,45 @@ sint8 lexer_next(handle lexer, lexer_lexem *lexem)
         if(ch == _ach('_'))
         {
             ls->lexem.type = LEXEM_TYPE_IDENTIFIER;
-            return lexer_next_identifier(ls);
+            ls->lexem.line = ls->line;
+            ls->lexem.col = ls->col;
+            if((res = lexer_next_identifier(ls)) != 0) return res;
         }
         else if(ch == _ach('\''))
         {
             ls->lexem.type = LEXEM_TYPE_STR_LITERAL;
-            return lexer_next_str_literal(ls);
+            ls->lexem.line = ls->line;
+            ls->lexem.col = ls->col;
+            if((res = lexer_next_str_literal(ls)) != 0) return res;
         }
         else
         {
             ls->lexem.type = LEXEM_TYPE_TOKEN;
+            ls->lexem.line = ls->line;
+            ls->lexem.col = ls->col;
             ls->lexem.token = g_lexer_ascii_to_token[ch];
-            return 0;
+            if(lexer_next_ch(ls) != 0) return -1;
         }
     }
     else if(ls->ch.type == LEXER_CHAR_TYPE_DIGIT)
     {
         ls->lexem.type = LEXEM_TYPE_NUM_LITERAL;
-        return lexer_next_num_literal(ls);
+        ls->lexem.line = ls->line;
+        ls->lexem.col = ls->col;
+        if((res = lexer_next_num_literal(ls)) != 0) return res;
     }
     else if(ls->ch.type == LEXER_CHAR_TYPE_EOS)
     {
         ls->lexem.type = LEXEM_TYPE_EOS;
-        return 0;
+        ls->lexem.line = ls->line;
+        ls->lexem.col = ls->col;
     }
     else
     {
         return -1;
     }
+
+    memcpy(lexem, &ls->lexem, sizeof(*lexem));
 
     return 0;
 }

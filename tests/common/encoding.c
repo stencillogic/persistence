@@ -121,14 +121,14 @@ int test_encoding_functions()
     chr2.length = 0;
     chr2.chr[0] = 0;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
-    if(chr2.length != 1 || chr2.chr[0] != (uint8)'?') return __LINE__;
+    if(chr2.state != CHAR_STATE_INVALID) return __LINE__;
 
     chr.chr[0] = 0xE0;
     chr.chr[1] = 0xA4;
     chr.chr[2] = 0xB9;
     chr.length = 3;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
-    if(chr2.length != 1 || chr2.chr[0] != (uint8)'?') return __LINE__;
+    if(chr2.state != CHAR_STATE_INVALID) return __LINE__;
 
     chr.chr[0] = 0xF0;
     chr.chr[1] = 0x90;
@@ -136,7 +136,7 @@ int test_encoding_functions()
     chr.chr[3] = 0x88;
     chr.length = 4;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
-    if(chr2.length != 1 || chr2.chr[0] != (uint8)'?') return __LINE__;
+    if(chr2.state != CHAR_STATE_INVALID) return __LINE__;
 
 
     puts("Testing terminator character test functions");

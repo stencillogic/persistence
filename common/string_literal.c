@@ -68,3 +68,14 @@ sint8 string_literal_move(handle from, handle to)
     memcpy(sl_to, sl_from, sizeof(*to));
     return string_literal_truncate(from);
 }
+
+
+sint8 string_literal_read(handle sh, uint8 *buf, uint64 *sz)
+{
+    string_literal *sl = (string_literal *)sh;
+
+    if(sl->sz < *sz) *sz = sl->sz;
+    memcpy(buf, sl->buf, *sz);
+
+    return 0;
+}

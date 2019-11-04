@@ -16,13 +16,13 @@
 
 typedef enum _lexer_lexem_type
 {
-    LEXEM_TYPE_RESERVED_WORD,   // e.g. SELECT, CREATE, etc.
-    LEXEM_TYPE_IDENTIFIER,      // e.g. column name
-    LEXEM_TYPE_BIND_VAR,        // bind variable
-    LEXEM_TYPE_STR_LITERAL,     // e.g. string
-    LEXEM_TYPE_NUM_LITERAL,     // e.g. number
-    LEXEM_TYPE_TOKEN,           // e.g. "(" ";" "+"
-    LEXEM_TYPE_EOS              // end of statement
+    LEXEM_TYPE_RESERVED_WORD = 1,   // e.g. SELECT, CREATE, etc.
+    LEXEM_TYPE_IDENTIFIER,          // e.g. column name
+    LEXEM_TYPE_BIND_VAR,            // bind variable
+    LEXEM_TYPE_STR_LITERAL,         // e.g. string
+    LEXEM_TYPE_NUM_LITERAL,         // e.g. number
+    LEXEM_TYPE_TOKEN,               // e.g. "(" ";" "+"
+    LEXEM_TYPE_EOS                  // end of statement
 } lexer_lexem_type;
 
 
@@ -107,7 +107,7 @@ typedef enum _lexer_reserved_word
 
 typedef enum _lexer_token
 {
-    LEXER_TOKEN_EXCL,               //   !
+    LEXER_TOKEN_EXCL = 1,           //   !
     LEXER_TOKEN_DOUBLE_QUOTE,       //   "
     LEXER_TOKEN_NUMBER,             //   #
     LEXER_TOKEN_DOLLAR,             //   $
@@ -145,15 +145,12 @@ typedef enum _lexer_token
 typedef struct _lexer_lexem
 {
     lexer_lexem_type    type;
-    union
-    {
-        lexer_reserved_word reserved_word;
-        lexer_token         token;
-        uint8               identifier[LEXER_MAX_IDENTIFIER_LEN];
-        handle              str_literal;
-        decimal             num_literal;
-        sint64              integer;
-    };
+    lexer_reserved_word reserved_word;
+    lexer_token         token;
+    uint8               identifier[LEXER_MAX_IDENTIFIER_LEN];
+    decimal             num_literal;
+    sint64              integer;
+    handle              str_literal;
     uint16              identifier_len; // length of identifier
     uint64              line;           // lexem line
     uint64              col;            // lexem start position in line
@@ -178,6 +175,11 @@ size_t lexer_get_allocation_size();
 // create and return lexical tokenizer instance for parsing strings of certain encoding
 // returns NULL on error
 handle lexer_create(void *buf, encoding enc, handle str_literal, lexer_interface li);
+
+
+// reset lexer to start parsing of a new statement
+// return 0 on success, non-0 on error
+sint8 lexer_reset(handle lexer);
 
 
 // read and return next token

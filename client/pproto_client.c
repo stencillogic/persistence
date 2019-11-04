@@ -5,6 +5,7 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <poll.h>
 
 #ifndef _BSD_SOURCE
 #define _BSD_SOURCE
@@ -714,14 +715,9 @@ sint8 pproto_client_poll(handle ss)
 {
     pproto_client_state *state = (pproto_client_state *)ss;
 
-    fd_set fdset;
-    struct timeval tv;
+    struct pollfd fds;
+    fds.fd = state->sock;
+    fds.events = POLLIN;
 
-    FD_ZERO(&fdset);
-    FD_SET(state->sock, &fdset);
-
-    tv.tv_sec = 0;
-    tv.tv_usec = 0;
-
-    return select(1, &fdset, NULL, NULL, &tv);
+    return poll(&fds, 1, 0);
 }

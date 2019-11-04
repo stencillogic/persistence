@@ -27,13 +27,16 @@
 // execute statement
 sint8 execution_exec_statement(handle lexer)
 {
+    uint64 sql_len;
     parser_ast_stmt *stmt;
     parser_interface pi;
     pi.report_error = pproto_server_send_error;
 
+    if(pproto_server_read_str_begin(&sql_len) != 0) return 1;
     if(parser_parse(&stmt, lexer, pi))
     {
         return 1;
     }
+    if(pproto_server_read_str_end() != 0) return 1;
     return 0;
 }
