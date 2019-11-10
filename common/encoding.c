@@ -32,14 +32,15 @@ void encoding_ascii_to_utf8(const_char_info *src, char_info *dst)
 
 void encoding_utf8_to_ascii(const_char_info *src, char_info *dst)
 {
+    dst->length = 1;
     if(0x00u == (0x80u & src->chr[0]))
     {
-        dst->length = 1;
         dst->chr[0] =  src->chr[0];
         dst->state = CHAR_STATE_COMPLETE;
     }
     else
     {
+        dst->chr[0] = 0x3F; // '?'
         dst->state = CHAR_STATE_INVALID;
     }
 }
@@ -48,6 +49,7 @@ void encoding_zero_conversion(const_char_info *src, char_info *dst)
 {
     memcpy(dst->chr, src->chr, src->length);
     dst->length = src->length;
+    dst->state = CHAR_STATE_COMPLETE;
 }
 
 encoding_conversion_fun g_encoding_converter_matrix[ENCODING_NUM][ENCODING_NUM] =

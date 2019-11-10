@@ -16,8 +16,10 @@
 void pproto_server_set_sock(int client_sock);
 
 // set client encoding
-void pproto_server_set_encoding(encoding client_encoding);
+void pproto_server_set_client_encoding(encoding enc);
 
+// set server encoding
+void pproto_server_set_encoding(encoding enc);
 
 
 ////////////////// connection setup and management
@@ -26,7 +28,7 @@ void pproto_server_set_encoding(encoding client_encoding);
 
 // read hello message from client
 // return 0 on success, non 0 otherwise
-sint8 pproto_server_read_client_hello();
+sint8 pproto_server_read_client_hello(encoding *client_enc);
 
 // sends server hello message
 // return 0 on success, non 0 otherwise
@@ -37,7 +39,7 @@ sint8 pproto_server_send_server_hello();
 sint8 pproto_server_send_auth_request();
 
 // read auth message from client, returns credentials
-// return 0 on successful authentication, 1 on wrong credentials, -1 on error
+// return 0 on success, non 0 otherwise
 sint8 pproto_server_read_auth(auth_credentials *cred);
 
 // sends authentication status: success if auth_status = 1, failure otherwise
@@ -83,7 +85,7 @@ sint8 pproto_server_send_str_begin();
 // if srv_enc is not 0 server encoding is expected, otherwise UTF-8 is assumed (source code enc)
 // data is not guarantied to be flushed after call finishes
 // return 0 on success, non 0 otherwise
-sint8 pproto_server_send_str(const uint8 *str_buf, uint16 sz, uint8 srv_enc);
+sint8 pproto_server_send_str(const uint8 *str_buf, sint32 sz, uint8 srv_enc);
 
 // finish sending the string to client
 // data is flushed after call finishes

@@ -31,6 +31,7 @@ int main(int argc, char **argv)
     process_test_fail(test_pproto_client_functions(), "test_pproto_client_functions");
     process_test_fail(test_dbclient_functions(), "test_dbclient_functions");
     process_test_fail(test_lexer_functions(), "test_lexer_functions");
+    process_test_fail(test_pproto_server_functions(), "test_pproto_server_functions");
 
     printf("Test execution completed.\n");
     return 0;

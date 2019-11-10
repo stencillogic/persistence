@@ -108,6 +108,15 @@ int test_pproto_client_functions()
 
     if(0 != socketpair(AF_UNIX, SOCK_STREAM, 0, sv)) return __LINE__;
 
+    // set timeouts
+    struct timeval tv;
+    tv.tv_sec = 20;
+    tv.tv_usec = 0;
+    if(0 != setsockopt(sv[0], SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv))) return __LINE__;
+    if(0 != setsockopt(sv[1], SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv))) return __LINE__;
+    if(0 != setsockopt(sv[0], SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv))) return __LINE__;
+    if(0 != setsockopt(sv[1], SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv))) return __LINE__;
+
     handle ss = pproto_client_create(ss_buf, sv[0]);
     if(NULL == ss) return __LINE__;
 
@@ -145,7 +154,7 @@ int test_pproto_client_functions()
     if(vmajor != 258 || vminor != 772) return __LINE__;
 
 
-    strncpy(cred.user_name, "test", AUTH_USER_NAME_SZ);
+    strncpy((char *)cred.user_name, "test", AUTH_USER_NAME_SZ);
     memset(cred.credentials, 0xcc, AUTH_CREDENTIAL_SZ);
     if(0 != pproto_client_send_auth(ss, &cred)) return __LINE__;
     if(16 + AUTH_CREDENTIAL_SZ  != recv(sv[1], buf, 16 + AUTH_CREDENTIAL_SZ, 0)) return __LINE__;
@@ -467,6 +476,7 @@ int test_pproto_client_functions()
     if(0 != pproto_client_poll(ss)) return __LINE__;
     buf[0] = 1;
     if(1 != send(sv[1], buf, 1, 0)) return __LINE__;
+    if(1 != pproto_client_poll(ss)) return __LINE__;
     if(1 != pproto_client_poll(ss)) return __LINE__;
 
 

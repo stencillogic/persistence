@@ -31,6 +31,7 @@ struct {
     uint32 recv_buf_upper_bound;
     uint32 send_buf_ptr;
     uint32 last_chunk_len_ptr;
+    uint32 chunk_len;
 
     encoding client_encoding;
     encoding server_encoding;
@@ -41,9 +42,8 @@ struct {
     encoding_build_char_fun enc_client_build_char;
     encoding_char_len_fun   enc_srv_char_len;
 
-    uint8   next_chunk_len;
     uint8   chunk_len_left;
-} g_pproto_server_state = {-1, PPROTO_SERVER_RECV_BUF_SIZE, PPROTO_SERVER_SEND_BUF_SIZE, 0u, 0u, 0u, 0u, ENCODING_UNKNOWN, ENCODING_UNKNOWN, NULL, NULL, NULL, NULL, NULL, 0u, 0u};
+} g_pproto_server_state = {-1, PPROTO_SERVER_RECV_BUF_SIZE, PPROTO_SERVER_SEND_BUF_SIZE, 0u, 0u, 0u, 0u, 0u, ENCODING_UNKNOWN, ENCODING_UNKNOWN, NULL, NULL, NULL, NULL, NULL, 0u};
 
 
 /////////////// functions
@@ -55,9 +55,9 @@ void pproto_server_set_sock(int client_sock)
 }
 
 
-void pproto_server_set_encoding(encoding client_encoding)
+void pproto_server_set_encoding(encoding enc)
 {
-    g_pproto_server_state.client_encoding = client_encoding;
+    g_pproto_server_state.server_encoding = enc;
 }
 
 
@@ -247,23 +247,35 @@ sint8 pproto_server_send_uint64(uint64 val)
 
 sint8 pproto_server_send_str_begin()
 {
-    uint8 magics[2] = {PPROTO_SQL_REQUEST_MESSAGE_MAGIC, PPROTO_UTEXT_STRING_MAGIC};
-
-    g_pproto_server_state.last_chunk_len_ptr = 0;
-    g_pproto_server_state.chunk_len_left = 0;
-
-    return pproto_server_send(magics, sizeof(magics));
-}
-
-
-sint8 pproto_server_send_str(const uint8 *str_buf, uint16 sz, uint8 srv_enc)
-{
     assert(g_pproto_server_state.client_encoding != ENCODING_UNKNOWN);
     assert(g_pproto_server_state.server_encoding != ENCODING_UNKNOWN);
     assert(g_pproto_server_state.enc_srv_to_client_conversion != NULL);
     assert(g_pproto_server_state.enc_utf8_to_client_conversion != NULL);
     assert(g_pproto_server_state.enc_srv_char_len != NULL);
-    assert(g_pproto_server_state.send_buf_size > 256);
+    assert(g_pproto_server_state.send_buf_size > 512);
+
+    if(0 != pproto_server_send_uint8(PPROTO_UTEXT_STRING_MAGIC)) return 1;
+
+    // make sure there is space in the user-space buffer
+    if(g_pproto_server_state.send_buf_ptr >= g_pproto_server_state.send_buf_size - 257 - ENCODING_MAXCHAR_LEN)
+    {
+        if(pproto_server_send_fully(g_pproto_server_send_buf, g_pproto_server_state.send_buf_ptr) != 0) return 1;
+        g_pproto_server_state.send_buf_ptr = 0;
+    }
+
+    // reserve space for string chunk length
+    g_pproto_server_state.last_chunk_len_ptr = g_pproto_server_state.send_buf_ptr;
+    g_pproto_server_state.send_buf_ptr++;
+
+    // current chunk length
+    g_pproto_server_state.chunk_len = 0;
+
+    return 0;
+}
+
+
+sint8 pproto_server_send_str(const uint8 *str_buf, sint32 sz, uint8 srv_enc)
+{
     assert(str_buf != NULL);
 
     const_char_info server_chr;
@@ -277,39 +289,63 @@ sint8 pproto_server_send_str(const uint8 *str_buf, uint16 sz, uint8 srv_enc)
     server_chr.state = CHAR_STATE_COMPLETE;
     server_chr.length = 0u;
 
-    g_pproto_server_state.enc_srv_char_len(&server_chr);
+    if(g_pproto_server_state.send_buf_ptr >= g_pproto_server_state.send_buf_size - 256 - ENCODING_MAXCHAR_LEN)
+    {
+        // this may occur if someone operates on buffer while in the middle of sending string
+        logger_error(_ach("pproto_server, incorrect buffer state while sending text string"));
+        return 1;
+    }
+
     while(sz > 0)
     {
-        if(g_pproto_server_state.send_buf_ptr >= g_pproto_server_state.send_buf_size - ENCODING_MAXCHAR_LEN - 1)
+        g_pproto_server_state.enc_srv_char_len(&server_chr);
+        if(server_chr.length == 0)
         {
-            if(pproto_server_send_fully(g_pproto_server_send_buf, g_pproto_server_state.send_buf_ptr) != 0)
-            {
-                return 1;
-            }
-            g_pproto_server_state.send_buf_ptr = 0;
-            client_chr.chr = g_pproto_server_send_buf + 1;
-            g_pproto_server_state.last_chunk_len_ptr = 0;
-            g_pproto_server_state.chunk_len_left = 0;
+            logger_error(_ach("pproto_server, invalid character with length 0"));
+            return 1;
         }
 
         conv_fun(&server_chr, &client_chr);
         client_chr.chr += client_chr.length;
         g_pproto_server_state.send_buf_ptr += client_chr.length;
-        g_pproto_server_state.chunk_len_left += client_chr.length;
+        g_pproto_server_state.chunk_len += client_chr.length;
 
-        if(g_pproto_server_state.chunk_len_left > 255 - ENCODING_MAXCHAR_LEN)
+        if(g_pproto_server_state.chunk_len >= 255)
         {
             // start a new chunk
-            g_pproto_server_send_buf[g_pproto_server_state.last_chunk_len_ptr] = g_pproto_server_state.chunk_len_left;
-            g_pproto_server_state.last_chunk_len_ptr = g_pproto_server_state.send_buf_ptr;
+            g_pproto_server_state.chunk_len -= 255;
+            g_pproto_server_send_buf[g_pproto_server_state.last_chunk_len_ptr] = 255;
+            g_pproto_server_state.last_chunk_len_ptr = g_pproto_server_state.send_buf_ptr - g_pproto_server_state.chunk_len;
+
+            if(g_pproto_server_state.chunk_len > 0)
+            {
+                // shift overflow part to reserve space for the new chunk's length
+                memcpy(g_pproto_server_send_buf + g_pproto_server_state.last_chunk_len_ptr + 1,
+                        g_pproto_server_send_buf + g_pproto_server_state.last_chunk_len_ptr,
+                        g_pproto_server_state.chunk_len);
+            }
+
             g_pproto_server_state.send_buf_ptr++;
-            g_pproto_server_state.chunk_len_left = 0;
             client_chr.chr++;
+
+            // make sure next chunk fits
+            if(g_pproto_server_state.send_buf_ptr >= g_pproto_server_state.send_buf_size - 256 - ENCODING_MAXCHAR_LEN)
+            {
+                // next chunk may not fit, flush completed chunks
+                if(pproto_server_send_fully(g_pproto_server_send_buf, g_pproto_server_state.last_chunk_len_ptr) != 0)
+                {
+                    return 1;
+                }
+
+                g_pproto_server_state.send_buf_ptr = g_pproto_server_state.chunk_len + 1;  // newely started chunk + it's length
+                memcpy(g_pproto_server_send_buf, g_pproto_server_send_buf + g_pproto_server_state.last_chunk_len_ptr, g_pproto_server_state.send_buf_ptr);
+                client_chr.chr = g_pproto_server_send_buf + g_pproto_server_state.send_buf_ptr;
+                g_pproto_server_state.last_chunk_len_ptr = 0;
+            }
         }
 
         server_chr.chr += server_chr.length;
         sz -= server_chr.length;
-        g_pproto_server_state.enc_srv_char_len(&server_chr);
     }
 
     return 0;
@@ -318,12 +354,13 @@ sint8 pproto_server_send_str(const uint8 *str_buf, uint16 sz, uint8 srv_enc)
 
 sint8 pproto_server_send_str_end()
 {
-    if(g_pproto_server_state.chunk_len_left > 0)
-    {
-        g_pproto_server_send_buf[g_pproto_server_state.last_chunk_len_ptr] = g_pproto_server_state.chunk_len_left;
-    }
+    g_pproto_server_send_buf[g_pproto_server_state.last_chunk_len_ptr] = g_pproto_server_state.chunk_len;
 
-    if(0 != pproto_server_send_uint8(0)) return 1;
+    if(g_pproto_server_state.chunk_len > 0)
+    {
+        if(0 != pproto_server_send_uint8(0)) return 1;
+        g_pproto_server_state.chunk_len = 0;
+    }
 
     return pproto_server_flush_send();
 }
@@ -346,11 +383,10 @@ sint8 pproto_server_read_str_begin(uint64 *len)
         }
     }
 
-    if(0 != pproto_server_get_uint8(&g_pproto_server_state.next_chunk_len))
+    if(0 != pproto_server_get_uint8(&g_pproto_server_state.chunk_len_left))
     {
         return 1;
     }
-    g_pproto_server_state.chunk_len_left = g_pproto_server_state.next_chunk_len;
 
     return 0;
 }
@@ -358,7 +394,7 @@ sint8 pproto_server_read_str_begin(uint64 *len)
 
 sint8 pproto_server_read_str(uint8 *str_buf, uint64 *sz, uint64 *charlen)
 {
-    uint32      wr = 0u, chrcnt = 0u;
+    uint64      wr = 0u, chrcnt = 0u;
     uint8       completed = 0u;
     char_info   server_chr;
     char_info   client_chr;
@@ -375,72 +411,64 @@ sint8 pproto_server_read_str(uint8 *str_buf, uint64 *sz, uint64 *charlen)
     client_chr.state = CHAR_STATE_INCOMPLETE;
     server_chr.chr = str_buf;     // will write directly in the destination buffer
 
-    if(g_pproto_server_state.next_chunk_len == 0)
+    if(g_pproto_server_state.chunk_len_left == 0)
     {
         completed = 1;
     }
 
     while(!completed)
     {
+        if(g_pproto_server_state.recv_buf_upper_bound == g_pproto_server_state.recv_buf_ptr)
+        {
+            if(pproto_server_read_portion() != 0) return 1;
+        }
+
+        g_pproto_server_state.enc_client_build_char(&client_chr, g_pproto_server_recv_buf[g_pproto_server_state.recv_buf_ptr]);
+        switch(client_chr.state)
+        {
+            case CHAR_STATE_INVALID:
+                // invalid character
+                logger_error(_ach("pproto_server, reading text string: invalid character received from client"));
+                return 1;
+
+            case CHAR_STATE_COMPLETE:
+                // completed character
+                g_pproto_server_state.enc_client_to_srv_conversion((const_char_info*)&client_chr, &server_chr);
+                wr += server_chr.length;
+                if(*(sz) - wr < ENCODING_MAXCHAR_LEN)   // next char may not fit
+                {
+                    completed = 1u;
+                }
+
+                chrcnt++;
+                client_chr.ptr = 0u;
+                client_chr.state = CHAR_STATE_INCOMPLETE;
+                server_chr.chr += server_chr.length;
+                break;
+
+            case CHAR_STATE_INCOMPLETE:
+            default:
+                break;
+        }
+
+        g_pproto_server_state.recv_buf_ptr++;
+        g_pproto_server_state.chunk_len_left--;
+
         if(g_pproto_server_state.chunk_len_left == 0)
         {
-            if(0 != pproto_server_get_uint8(&g_pproto_server_state.next_chunk_len))
+            if(0 != pproto_server_get_uint8(&g_pproto_server_state.chunk_len_left))
             {
                 return 1;
             }
 
-            if(g_pproto_server_state.next_chunk_len == 0)
+            if(g_pproto_server_state.chunk_len_left == 0)
             {
                 // NOTE: in case last char is not complete it will be dropped with no error
                 completed = 1u;
             }
-            else
-            {
-                g_pproto_server_state.chunk_len_left = g_pproto_server_state.next_chunk_len;
-            }
-        }
-        else
-        {
-            if(g_pproto_server_state.recv_buf_upper_bound == g_pproto_server_state.recv_buf_ptr)
-            {
-                if(pproto_server_read_portion() != 0) return 1;
-            }
-
-            g_pproto_server_state.enc_client_build_char(&client_chr, g_pproto_server_recv_buf[g_pproto_server_state.recv_buf_ptr]);
-            switch(client_chr.state)
-            {
-                case CHAR_STATE_INVALID:
-                    // invalid character
-                    logger_error(_ach("pproto_server, reading text string: invalid character received from client"));
-                    return 1;
-
-                case CHAR_STATE_COMPLETE:
-                    // completed character
-                    g_pproto_server_state.enc_client_to_srv_conversion((const_char_info*)&client_chr, &server_chr);
-                    wr += server_chr.length;
-                    if(*(sz) - wr < ENCODING_MAXCHAR_LEN)   // next char may not fit
-                    {
-                        completed = 1u;
-                    }
-                    else
-                    {
-                        chrcnt++;
-                    }
-
-                    client_chr.ptr = 0u;
-                    client_chr.state = CHAR_STATE_INCOMPLETE;
-                    server_chr.chr += server_chr.length;
-                    break;
-
-                case CHAR_STATE_INCOMPLETE:
-                default:
-                    break;
-            }
-
-            g_pproto_server_state.recv_buf_ptr++;
-            g_pproto_server_state.chunk_len_left--;
         }
     }
+
     *sz = wr;
     *charlen = chrcnt;
 
@@ -452,6 +480,8 @@ sint8 pproto_server_read_char(char_info *ch, sint8 *eos)
 {
     char_info   client_chr;
     uint8       client_chr_buf[ENCODING_MAXCHAR_LEN];
+    uint8       completed = 0;
+    sint8       res;
 
     assert(g_pproto_server_state.client_encoding != ENCODING_UNKNOWN);
     assert(g_pproto_server_state.server_encoding != ENCODING_UNKNOWN);
@@ -462,7 +492,7 @@ sint8 pproto_server_read_char(char_info *ch, sint8 *eos)
     client_chr.ptr = 0u;
     client_chr.state = CHAR_STATE_INCOMPLETE;
 
-    if(g_pproto_server_state.next_chunk_len == 0)
+    if(g_pproto_server_state.chunk_len_left == 0)
     {
         *eos = 1;
         return 0;
@@ -472,58 +502,55 @@ sint8 pproto_server_read_char(char_info *ch, sint8 *eos)
         *eos = 0;
     }
 
-    while(1)
+    while(!completed)
     {
+        if(g_pproto_server_state.recv_buf_upper_bound == g_pproto_server_state.recv_buf_ptr)
+        {
+            if(pproto_server_read_portion() != 0) return 1;
+        }
+
+        g_pproto_server_state.enc_client_build_char(&client_chr, g_pproto_server_recv_buf[g_pproto_server_state.recv_buf_ptr]);
+        switch(client_chr.state)
+        {
+            case CHAR_STATE_INVALID:
+                // invalid character
+                logger_error(_ach("pproto_server, reading text string: invalid character received from client"));
+                res = 1;
+                completed = 1;
+                break;
+
+            case CHAR_STATE_COMPLETE:
+                // completed character
+                g_pproto_server_state.enc_client_to_srv_conversion((const_char_info*)&client_chr, ch);
+                res = 0;
+                completed = 1;
+                break;
+
+            case CHAR_STATE_INCOMPLETE:
+            default:
+                break;
+        }
+
+        g_pproto_server_state.recv_buf_ptr++;
+        g_pproto_server_state.chunk_len_left--;
+
         if(g_pproto_server_state.chunk_len_left == 0)
         {
-            if(0 != pproto_server_get_uint8(&g_pproto_server_state.next_chunk_len))
+            if(0 != pproto_server_get_uint8(&g_pproto_server_state.chunk_len_left))
             {
                 return 1;
             }
 
-            if(g_pproto_server_state.next_chunk_len == 0)
+            if(g_pproto_server_state.chunk_len_left == 0)
             {
                 // NOTE: if last char is not complete it will be dropped with no error message
                 *eos = 1;
                 return 0;
             }
-            else
-            {
-                g_pproto_server_state.chunk_len_left = g_pproto_server_state.next_chunk_len;
-            }
-        }
-        else
-        {
-            if(g_pproto_server_state.recv_buf_upper_bound == g_pproto_server_state.recv_buf_ptr)
-            {
-                if(pproto_server_read_portion() != 0) return 1;
-            }
-
-            g_pproto_server_state.enc_client_build_char(&client_chr, g_pproto_server_recv_buf[g_pproto_server_state.recv_buf_ptr]);
-            switch(client_chr.state)
-            {
-                case CHAR_STATE_INVALID:
-                    // invalid character
-                    logger_error(_ach("pproto_server, reading text string: invalid character received from client"));
-                    return 1;
-
-                case CHAR_STATE_COMPLETE:
-                    // completed character
-                    g_pproto_server_state.enc_client_to_srv_conversion((const_char_info*)&client_chr, ch);
-                    return 0;
-                    break;
-
-                case CHAR_STATE_INCOMPLETE:
-                default:
-                    break;
-            }
-
-            g_pproto_server_state.recv_buf_ptr++;
-            g_pproto_server_state.chunk_len_left--;
         }
     }
 
-    return 0;
+    return res;
 }
 
 
@@ -533,22 +560,15 @@ sint8 pproto_server_read_str_end()
 
     if(g_pproto_server_state.chunk_len_left > 0)
     {
-        if(0 != pproto_server_get(strbuf, g_pproto_server_state.chunk_len_left)) return 1;
-        g_pproto_server_state.chunk_len_left = 0;
-        if(0 != pproto_server_get_uint8(&g_pproto_server_state.next_chunk_len)) return 1;
-    }
-
-    if(g_pproto_server_state.next_chunk_len != 0)
-    {
         if(pproto_server_send_uint8(PPROTO_CANCEL_MESSAGE_MAGIC) != 0) return 1;
         if(pproto_server_flush_send() != 0) return 1;
 
         do
         {
-            if(0 != pproto_server_get(strbuf, g_pproto_server_state.next_chunk_len)) return 1;
-            if(0 != pproto_server_get_uint8(&g_pproto_server_state.next_chunk_len)) return 1;
+            if(0 != pproto_server_get(strbuf, g_pproto_server_state.chunk_len_left)) return 1;
+            if(0 != pproto_server_get_uint8(&g_pproto_server_state.chunk_len_left)) return 1;
         }
-        while(g_pproto_server_state.next_chunk_len != 0);
+        while(g_pproto_server_state.chunk_len_left != 0);
     }
 
     return 0;
@@ -579,7 +599,7 @@ sint8 pproto_server_read_auth(auth_credentials *cred)
         memcpy(cred->user_name, user_name, sz);
     }
 
-    if(pproto_server_get(cred->credentials, 64) != 0)
+    if(pproto_server_get(cred->credentials, AUTH_CREDENTIAL_SZ * sizeof(uint8)) != 0)
     {
         return 1;
     }
@@ -592,9 +612,21 @@ sint8 pproto_server_send_error(error_code errcode, const achar* msg)
 {
     error_set(errcode);
     if(pproto_server_send_str_begin() != 0
-            || pproto_server_send_str((uint8 *)error_msg(), strlen(error_msg()), 0) != 0
-            || (msg != NULL && pproto_server_send_str((uint8 *)msg, strlen(msg), 0) != 0)
-            || pproto_server_send_str_end() != 0)
+            || pproto_server_send_str((uint8 *)error_msg(), strlen(error_msg()), 0) != 0)
+    {
+        return 1;
+    }
+
+    if(msg != NULL)
+    {
+        if(pproto_server_send_str((uint8 *)_ach(": "), strlen(_ach(": ")), 0) != 0
+                || pproto_server_send_str((uint8 *)msg, strlen(msg), 0) != 0)
+        {
+            return 1;
+        }
+    }
+
+    if(0 != pproto_server_send_str_end() != 0)
     {
         return 1;
     }

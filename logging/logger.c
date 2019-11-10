@@ -25,7 +25,8 @@ struct {
     achar           log_msg_buf[MAX_LOG_MSG_LEN];
     size_t          log_file_size;
     size_t          log_file_size_threshold;
-} g_logger_state;
+    uint8           initialized;
+} g_logger_state = {.initialized = 0};
 
 
 size_t logger_prepare_msg(logging_level level, const achar* fmt, va_list ap)
@@ -147,6 +148,8 @@ sint8 reopen_log_file()
 // create logger, returns 0 on success, non 0 otherwise
 sint8 logger_create(const achar *log_file_name)
 {
+    if(g_logger_state.initialized != 0) return 0;
+
     g_logger_state.log_file_name_base = 0;
     g_logger_state.current_log = -1;
 
@@ -185,7 +188,11 @@ sint8 logger_create(const achar *log_file_name)
     memcpy(g_logger_state.log_file_path + log_dir_len, log_file_name, log_file_name_len);
     g_logger_state.log_file_name_base = log_dir_len + log_file_name_len;
 
-    return reopen_log_file();
+    if(0 != reopen_log_file()) return 1;
+
+    g_logger_state.initialized = 1;
+
+    return 0;
 }
 
 logging_level logger_log_level()

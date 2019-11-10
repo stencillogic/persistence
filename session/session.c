@@ -85,7 +85,7 @@ sint8 session_auth_client()
         return 1;
     }
 
-    pproto_server_set_encoding(g_session_state.client_encoding);
+    pproto_server_set_client_encoding(g_session_state.client_encoding);
 
     if(pproto_server_send_server_hello() != 0)
     {
@@ -204,6 +204,7 @@ sint8 session_create(int client_sock)
     pproto_server_set_sock(g_session_state.client_sock);
 
     // TODO: connect to tipi and determine server encoding
+    pproto_server_set_encoding(g_session_state.server_encoding);
 
     if(session_create_lexer() != 0) return 1;
 

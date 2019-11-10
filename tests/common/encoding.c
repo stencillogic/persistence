@@ -70,12 +70,14 @@ int test_encoding_functions()
     if(encoding_is_convertable(ENCODING_ASCII, ENCODING_UTF8) != 1) return __LINE__;
     if(encoding_is_convertable(ENCODING_UTF8, ENCODING_ASCII) != 1) return __LINE__;
 
-    encoding_conversion_fun ascii_to_utf8, utf8_to_ascii;
+    encoding_conversion_fun ascii_to_utf8, utf8_to_ascii, zero_conv;
 
     ascii_to_utf8 = encoding_get_conversion_fun(ENCODING_ASCII, ENCODING_UTF8);
     utf8_to_ascii = encoding_get_conversion_fun(ENCODING_UTF8, ENCODING_ASCII);
+    zero_conv = encoding_get_conversion_fun(ENCODING_UTF8, ENCODING_UTF8);
     if(ascii_to_utf8 == NULL) return __LINE__;
     if(utf8_to_ascii == NULL) return __LINE__;
+    if(zero_conv == NULL) return __LINE__;
     if(NULL != encoding_get_conversion_fun(ENCODING_ASCII, ENCODING_UNKNOWN)) return __LINE__;
     if(NULL != encoding_get_conversion_fun(ENCODING_UTF8, ENCODING_UNKNOWN)) return __LINE__;
 
@@ -83,43 +85,55 @@ int test_encoding_functions()
     chr.length = 1;
     chr2.length = 0;
     chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_INVALID;
     ascii_to_utf8((const_char_info*)&chr, &chr2);
     if(chr2.length != 1 || chr2.chr[0] != chr.chr[0]) return __LINE__;
+    if(chr2.state != CHAR_STATE_COMPLETE) return __LINE__;
 
     chr.chr[0] = 0x8Fu;
     chr.length = 1;
     chr2.length = 0;
     chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_INVALID;
     ascii_to_utf8((const_char_info*)&chr, &chr2);
     if(chr2.length != 1 || chr2.chr[0] != (uint8)'?') return __LINE__;
+    if(chr2.state != CHAR_STATE_COMPLETE) return __LINE__;
 
     chr.chr[0] = 0x00u;
     chr.length = 1;
     chr2.length = 0;
     chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_INVALID;
     ascii_to_utf8((const_char_info*)&chr, &chr2);
     if(chr2.length != 1 || chr2.chr[0] != chr.chr[0]) return __LINE__;
-
+    if(chr2.state != CHAR_STATE_COMPLETE) return __LINE__;
 
     chr.chr[0] = 0x7Fu;
     chr.length = 1;
     chr2.length = 0;
     chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_INVALID;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
     if(chr2.length != 1 || chr2.chr[0] != chr.chr[0]) return __LINE__;
+    if(chr2.state != CHAR_STATE_COMPLETE) return __LINE__;
 
     chr.chr[0] = 0x00u;
     chr.length = 1;
     chr2.length = 0;
     chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_INVALID;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
     if(chr2.length != 1 || chr2.chr[0] != chr.chr[0]) return __LINE__;
+    if(chr2.state != CHAR_STATE_COMPLETE) return __LINE__;
 
     chr.chr[0] = 0xC2;
     chr.chr[1] = 0xA2;
     chr.length = 2;
     chr2.length = 0;
     chr2.chr[0] = 0;
+    chr2.length = 0;
+    chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_COMPLETE;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
     if(chr2.state != CHAR_STATE_INVALID) return __LINE__;
 
@@ -127,6 +141,9 @@ int test_encoding_functions()
     chr.chr[1] = 0xA4;
     chr.chr[2] = 0xB9;
     chr.length = 3;
+    chr2.length = 0;
+    chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_COMPLETE;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
     if(chr2.state != CHAR_STATE_INVALID) return __LINE__;
 
@@ -137,6 +154,16 @@ int test_encoding_functions()
     chr.length = 4;
     utf8_to_ascii((const_char_info*)&chr, &chr2);
     if(chr2.state != CHAR_STATE_INVALID) return __LINE__;
+
+    // zero conv
+    chr.chr[0] = 0x7Fu;
+    chr.length = 1;
+    chr2.length = 0;
+    chr2.chr[0] = 0;
+    chr2.state = CHAR_STATE_INVALID;
+    zero_conv((const_char_info*)&chr, &chr2);
+    if(chr2.length != 1 || chr2.chr[0] != chr.chr[0]) return __LINE__;
+    if(chr2.state != CHAR_STATE_COMPLETE) return __LINE__;
 
 
     puts("Testing terminator character test functions");

@@ -715,6 +715,8 @@ sint8 pproto_client_poll(handle ss)
 {
     pproto_client_state *state = (pproto_client_state *)ss;
 
+    if(state->recv_buf_upper_bound - state->recv_buf_ptr > 0) return 1;
+
     struct pollfd fds;
     fds.fd = state->sock;
     fds.events = POLLIN;

@@ -32,4 +32,7 @@ int test_dbclient_functions();
 // test client-side db driver functions
 int test_lexer_functions();
 
+// test pproto_server functions
+int test_pproto_server_functions();
+
 #endif

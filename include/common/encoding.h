@@ -8,8 +8,8 @@
 #include "defs/defs.h"
 
 
-#define ENCODING_MAXCHAR_LEN 4      // longest possible character in all supported encodings
-#define ENCODING_NUM 3              // number of encodings in encoding enum
+#define ENCODING_MAXCHAR_LEN    (4)     // longest possible character in all supported encodings
+#define ENCODING_NUM            (3)     // number of encodings in encoding enum
 
 
 typedef enum _encoding
@@ -57,7 +57,8 @@ encoding_char_len_fun encoding_get_char_len_fun(encoding enc);
 
 // convert character from encoding to encoding
 // if src or dst is invalid behaviour is undetermined
-// if src can't be converted to dst, then dst->state = CHAR_STATE_INVALID
+// if src can't be converted to dst, then dst->state is set to CHAR_STATE_INVALID and the question mark is placed as a dst character
+// if character converted successfully then dst->State is CHAR_STATE_COMPLETE
 typedef void (*encoding_conversion_fun)(const_char_info *src, char_info *dst);
 
 // get conversion function
