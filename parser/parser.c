@@ -13,18 +13,35 @@
 
 struct _parser_state
 {
-    handle          lexer;                              // lexer instance
-    lexer_lexem     lexem;                              // currently read lexem
-    uint8           expr_op_level[17];                  // "operator -> precedence" correspondence
-    parser_ast_stmt *stmt_base;                         // statement base address
-    uint64          total_sz;                           // total allocated size
-    achar           errmes[PARSER_ERRMES_BUF_SZ];       // buffer for formatted error message
-    sint8           (*report_error)(error_code error, const achar *msg);
-} g_parser_state = {.lexer = NULL, .expr_op_level = {0, 1,1, 2,2, 3,3,3,3,3,3, 4,4,4, 5, 6, 7}};
+    handle              lexer;                              // lexer instance
+    lexer_lexem         lexem;                              // currently read lexem
+    uint8               expr_op_level[17];                  // "operator -> precedence" correspondence
+    parser_ast_stmt     *stmt_base;                         // statement base address
+    uint64              total_sz;                           // total allocated size
+    achar               errmes[PARSER_ERRMES_BUF_SZ];       // buffer for formatted error message
+    sint8               (*report_error)(error_code error, const achar *msg);
+    parser_expr_op_type saved_op;                           // first operator with priority lower than prio of "NOT" (NOT is special case)
+} g_parser_state =
+{
+    .stmt_base = NULL,
+    .lexem =
+    {
+        .type = 0,
+        .line = 0,
+        .col = 0,
+        .str_literal = NULL
+    },
+    .total_sz = 0,
+    .report_error = NULL,
+    .lexer = NULL,
+    .expr_op_level = {0, 1,1, 2,2, 3,3,3,3,3,3, 4,4,4, 5, 6, 7},
+    .saved_op = PARSER_EXPR_OP_TYPE_NONE
+};
 
 
 // predefinitions
 sint8 parser_parse_expr(parser_ast_expr *stmt);
+sint8 parser_parse_expr_with_op_prio(parser_ast_expr *stmt, uint8 highest_lvl);
 sint8 parser_parse_select(parser_ast_select *stmt);
 
 
@@ -92,7 +109,7 @@ sint8 parser_parse_identifier(uint8 *identifier, uint16 *identifier_len, uint16 
     }
     else
     {
-        if(0 != parser_report_error(_ach("identifier is expected at line %d, column %d"), g_parser_state.lexem.identifier, g_parser_state.lexem.line, g_parser_state.lexem.col)) return -1;
+        if(0 != parser_report_error(_ach("identifier is expected at line %d, column %d"), g_parser_state.lexem.line, g_parser_state.lexem.col)) return -1;
         return 1;
     }
 
@@ -125,6 +142,8 @@ sint8 parser_parse_name(parser_ast_name *stmt)
         {
             stmt->second_part_len = g_parser_state.lexem.identifier_len;
             memcpy(stmt->second_part, g_parser_state.lexem.identifier, stmt->second_part_len);
+
+            if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         }
         else
         {
@@ -145,6 +164,10 @@ sint8 parser_parse_name(parser_ast_name *stmt)
 sint8 parser_parse_expr_arg(parser_ast_expr *stmt)
 {
     sint8 res;
+    parser_expr_op_type saved_op;
+
+    // in case of NOT operator parser_parse_expr sets this value
+    g_parser_state.saved_op = PARSER_EXPR_OP_TYPE_NONE;
 
     if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN)
     {
@@ -152,7 +175,9 @@ sint8 parser_parse_expr_arg(parser_ast_expr *stmt)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
+            saved_op = g_parser_state.saved_op;
             if((res = parser_parse_expr(stmt)) != 0) return res;
+            g_parser_state.saved_op = saved_op;
 
             if(!(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR))
             {
@@ -172,7 +197,7 @@ sint8 parser_parse_expr_arg(parser_ast_expr *stmt)
     {
         stmt->node_type = PARSER_EXPR_NODE_TYPE_STR;
         void *strlit_buf;
-        if((res = parser_allocate_ast_el((void **)&strlit_buf, sizeof(string_literal_alloc_sz()))) != 0) return res;
+        if((res = parser_allocate_ast_el((void **)&strlit_buf, string_literal_alloc_sz())) != 0) return res;
         if((stmt->str = string_literal_create(strlit_buf)) == NULL ||
             string_literal_move(g_parser_state.lexem.str_literal, stmt->str) != 0)
         {
@@ -196,6 +221,17 @@ sint8 parser_parse_expr_arg(parser_ast_expr *stmt)
     {
         stmt->node_type = PARSER_EXPR_NODE_TYPE_NULL;
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+    }
+    else if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_NOT)
+    {
+        // unary NOT; parse expr until priority less than prio of NOT
+        stmt->node_type = PARSER_EXPR_NODE_TYPE_OP;
+        stmt->op = PARSER_EXPR_OP_TYPE_NOT;
+        if((res = parser_allocate_ast_el((void **)&stmt->left, sizeof(*stmt->left))) != 0) return res;
+        if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+        // the next call sets value of g_parser_state.saved_op
+        if((res = parser_parse_expr_with_op_prio(stmt->left, g_parser_state.expr_op_level[PARSER_EXPR_OP_TYPE_NOT])) != 0) return res;
     }
     else
     {
@@ -278,11 +314,6 @@ sint8 parser_parse_expr_op(parser_expr_op_type *operator)
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             }
         }
-        else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_NOT)
-        {
-            op = PARSER_EXPR_OP_TYPE_NOT;
-            if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-        }
         else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_AND)
         {
             op = PARSER_EXPR_OP_TYPE_AND;
@@ -301,12 +332,15 @@ sint8 parser_parse_expr_op(parser_expr_op_type *operator)
 }
 
 
-// build expression tree
-sint8 parser_parse_expr(parser_ast_expr *stmt)
+// Build expression tree.
+// Parsing stops if next operator has priority lower than specified ( > highest_lvl);
+//   the parsed operator then is saved as g_parser_state.saved_op.
+// This is required to parse argument with prefixing operator NOT
+sint8 parser_parse_expr_with_op_prio(parser_ast_expr *stmt, uint8 highest_lvl)
 {
     sint8 res;
-    parser_ast_expr *new_stmt, *node_for_level[8] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-    parser_expr_op_type op;
+    parser_ast_expr *new_stmt, *node_for_level[8] = {stmt, stmt, stmt, stmt, stmt, stmt, stmt, stmt};
+    parser_expr_op_type op = PARSER_EXPR_OP_TYPE_NONE;
     uint8 new_level;
 
     stmt->left = stmt->right = NULL;
@@ -344,9 +378,24 @@ sint8 parser_parse_expr(parser_ast_expr *stmt)
         if((res = parser_parse_expr_arg(stmt)) != 0) return res;
 
         // bring to the state when root node is operator
-        if((res = parser_parse_expr_op(&op)) != 0) return res;
+        if(g_parser_state.saved_op == PARSER_EXPR_OP_TYPE_NONE)
+        {
+            if((res = parser_parse_expr_op(&op)) != 0) return res;
+        }
+        else
+        {
+            op = g_parser_state.saved_op;
+            g_parser_state.saved_op = PARSER_EXPR_OP_TYPE_NONE;
+        }
+
         if(op != PARSER_EXPR_OP_TYPE_NONE)
         {
+            if(g_parser_state.expr_op_level[op] > highest_lvl)
+            {
+                g_parser_state.saved_op = op;
+                return 0;
+            }
+
             if((res = parser_allocate_ast_el((void **)&new_stmt, sizeof(*new_stmt))) != 0) return res;
             *new_stmt = *stmt;
             stmt->left = new_stmt;
@@ -369,20 +418,32 @@ sint8 parser_parse_expr(parser_ast_expr *stmt)
     do
     {
         // binary operator
-        if((res = parser_parse_expr_op(&op)) != 0) return res;
+        if(g_parser_state.saved_op == PARSER_EXPR_OP_TYPE_NONE)
+        {
+            if((res = parser_parse_expr_op(&op)) != 0) return res;
+        }
+        else
+        {
+            op = g_parser_state.saved_op;
+            g_parser_state.saved_op = PARSER_EXPR_OP_TYPE_NONE;
+        }
 
         if(op != PARSER_EXPR_OP_TYPE_NONE)
         {
             // check operator precedence (level)
             new_level = g_parser_state.expr_op_level[op];
 
+            // for processing "NOT <subexpr>" check if the level is hiegher than level of NOT
+            if(new_level > highest_lvl)
+            {
+                g_parser_state.saved_op = op;
+                return 0;
+            }
+
             if(g_parser_state.expr_op_level[stmt->op] < new_level)
             {
-                if(node_for_level[new_level] != NULL)
-                {
-                    // go to the last operator with the same level
-                    stmt = node_for_level[new_level];
-                }
+                // go to the last operator with the same level
+                stmt = node_for_level[new_level];
 
                 if((res = parser_allocate_ast_el((void **)&new_stmt, sizeof(*new_stmt))) != 0) return res;
                 *new_stmt = *stmt;
@@ -417,6 +478,11 @@ sint8 parser_parse_expr(parser_ast_expr *stmt)
     return 0;
 }
 
+sint8 parser_parse_expr(parser_ast_expr *stmt)
+{
+    g_parser_state.saved_op = PARSER_EXPR_OP_TYPE_NONE;
+    return parser_parse_expr_with_op_prio(stmt, 255);
+}
 
 // alias: [ AS <alias> | <alias> ]
 sint8 parser_parse_optional_alias(uint8 *alias, uint16 *alias_len)
@@ -430,7 +496,10 @@ sint8 parser_parse_optional_alias(uint8 *alias, uint16 *alias_len)
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
     }
 
-    if((res = parser_parse_identifier(alias, alias_len, PARSER_MAX_ALIAS_NAME_LEN)) != 0) return res;
+    if(g_parser_state.lexem.type == LEXEM_TYPE_IDENTIFIER)
+    {
+        if((res = parser_parse_identifier(alias, alias_len, PARSER_MAX_ALIAS_NAME_LEN)) != 0) return res;
+    }
 
     return 0;
 }
@@ -454,17 +523,20 @@ sint8 parser_parse_named_expr_list(parser_ast_expr_list *stmt)
 {
     sint8 res;
 
-    do
+    stmt->named = 1;
+    if((res = parser_parse_named_expr(&stmt->named_expr)) != 0) return res;
+
+    while(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA)
     {
-        stmt->next = NULL;
+        if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
-        stmt->named = 1;
-        if((res = parser_parse_named_expr(&stmt->named_expr)) != 0) return res;
+        if((res = parser_allocate_ast_el((void **)&stmt->next, sizeof(*stmt->next))) != 0) return res;
 
-        if((res = parser_allocate_ast_el((void **)&stmt->next, sizeof(parser_ast_expr_list))) != 0) return res;
         stmt = stmt->next;
+        stmt->named = 1;
+
+        if((res = parser_parse_named_expr(&stmt->named_expr)) != 0) return res;
     }
-    while(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA);
 
     return 0;
 }
@@ -475,16 +547,18 @@ sint8 parser_parse_expr_list(parser_ast_expr_list *stmt)
 {
     sint8 res;
 
-    do
+    if((res = parser_parse_expr(&stmt->expr)) != 0) return res;
+
+    while(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA)
     {
-        stmt->next = NULL;
+        if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+        if((res = parser_allocate_ast_el((void **)&stmt->next, sizeof(*stmt->next))) != 0) return res;
+
+        stmt = stmt->next;
 
         if((res = parser_parse_expr(&stmt->expr)) != 0) return res;
-
-        if((res = parser_allocate_ast_el((void **)&stmt->next, sizeof(parser_ast_expr_list))) != 0) return res;
-        stmt = stmt->next;
     }
-    while(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA);
 
     return 0;
 }
@@ -498,15 +572,12 @@ sint8 parser_parse_expr_list(parser_ast_expr_list *stmt)
 // from part of select with joins
 sint8 parser_parse_from(parser_ast_from *stmt)
 {
-    sint8 res, first_run = 1, from_item;
+    sint8 res, first_run = 1, from_item, completed = 0;
 
     do
     {
         from_item = 0;
 
-        stmt->alias_len = 0;
-        stmt->on_expr = NULL;
-        stmt->next = NULL;
         stmt->join_type = PARSER_JOIN_TYPE_NONE;
 
         // from item: table or subquery
@@ -517,6 +588,7 @@ sint8 parser_parse_from(parser_ast_from *stmt)
             {
                 stmt->type = PARSER_FROM_TYPE_SUBQUERY;
 
+                if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                 if((res = parser_parse_select(&stmt->subquery)) != 0) return res;
 
                 if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
@@ -629,8 +701,12 @@ sint8 parser_parse_from(parser_ast_from *stmt)
             if((res = parser_allocate_ast_el((void **)&stmt->next, sizeof(*stmt->next))) != 0) return res;
             stmt = stmt->next;
         }
+        else
+        {
+            completed = 1;
+        }
     }
-    while(stmt->join_type != PARSER_JOIN_TYPE_NONE);
+    while(!completed);
 
     return 0;
 }
@@ -679,7 +755,7 @@ sint8 parser_parse_single_select(parser_ast_single_select *stmt)
     {
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if((res = parser_allocate_ast_el((void **)&stmt->where, sizeof(*stmt->where))) != 0) return res;
-        if((res = parser_parse_expr_list(stmt->where)) != 0) return res;
+        if((res = parser_parse_expr(stmt->where)) != 0) return res;
     }
 
     if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_GROUP)
@@ -769,6 +845,10 @@ sint8 parser_parse_order_by(parser_ast_order_by *stmt)
         if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+            if((res = parser_allocate_ast_el((void **)&stmt->next, sizeof(*stmt->next))) != 0) return res;
+
+            stmt = stmt->next;
         }
         else
         {
@@ -844,6 +924,8 @@ sint8 parser_parse_select(parser_ast_select *stmt)
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_BY)
         {
+            if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
             if((res = parser_allocate_ast_el((void **)&stmt->order_by, sizeof(*stmt->order_by))) != 0) return res;
 
             if((res = parser_parse_order_by(stmt->order_by)) != 0) return res;
@@ -1098,7 +1180,7 @@ sint8 parser_parse_update(parser_ast_update *stmt)
     {
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if((res = parser_allocate_ast_el((void **)&stmt->where, sizeof(*stmt->where))) != 0) return res;
-        if((res = parser_parse_expr_list(stmt->where)) != 0) return res;
+        if((res = parser_parse_expr(stmt->where)) != 0) return res;
     }
 
     return 0;
@@ -1131,7 +1213,7 @@ sint8 parser_parse_delete(parser_ast_delete *stmt)
     {
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if((res = parser_allocate_ast_el((void **)&stmt->where, sizeof(*stmt->where))) != 0) return res;
-        if((res = parser_parse_expr_list(stmt->where)) != 0) return res;
+        if((res = parser_parse_expr(stmt->where)) != 0) return res;
     }
 
     return 0;

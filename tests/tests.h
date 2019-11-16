@@ -29,10 +29,16 @@ int test_pproto_client_functions();
 // test client-side db driver functions
 int test_dbclient_functions();
 
+// test string_literal functions
+int test_string_literal_functions();
+
 // test client-side db driver functions
 int test_lexer_functions();
 
 // test pproto_server functions
 int test_pproto_server_functions();
+
+// test parser functions
+int test_parser_functions();
 
 #endif

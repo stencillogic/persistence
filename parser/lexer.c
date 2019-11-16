@@ -614,7 +614,12 @@ sint8 lexer_next_num_literal(lexer_state *ls)
     memset(&ls->lexem.num_literal, 0, sizeof(ls->lexem.num_literal));
     ls->lexem.num_literal.sign = DECIMAL_SIGN_POS;
 
-    do
+    while(LEXER_CHAR_TYPE_DIGIT == ls->ch.type && (48 == ls->ch.ach.chr[0]))
+    {
+        if(lexer_next_ch(ls) != 0) return -1;
+    }
+
+    while(LEXER_CHAR_TYPE_DIGIT == ls->ch.type)
     {
         d = ls->ch.ach.chr[0] - 48;
 
@@ -644,7 +649,6 @@ sint8 lexer_next_num_literal(lexer_state *ls)
 
         if(lexer_next_ch(ls) != 0) return -1;
     }
-    while(ls->ch.type == LEXER_CHAR_TYPE_DIGIT);
 
     if(ls->num_mode == 1)
     {

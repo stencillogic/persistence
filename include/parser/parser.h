@@ -249,7 +249,7 @@ typedef struct _parser_ast_single_select
     parser_uniq_type        uniq_type;
     parser_ast_expr_list    *projection;    // if NULL all is selected
     parser_ast_from         *from;          // optional, can be NULL
-    parser_ast_expr_list    *where;         // optional, can be NULL, must resolve to boolean
+    parser_ast_expr         *where;         // optional, can be NULL, must resolve to boolean
     parser_ast_expr_list    *group_by;      // optional, can be NULL
     parser_ast_expr_list    *having;        // optional, can be NULL, must resolve to boolean
 } parser_ast_single_select;
@@ -342,7 +342,7 @@ typedef struct _parser_ast_update
     uint8                   alias[PARSER_MAX_ALIAS_NAME_LEN];
     uint16                  alias_len;
     parser_ast_set_list     set_list;
-    parser_ast_expr_list    *where;     // optional, can be NULL
+    parser_ast_expr         *where;     // optional, can be NULL
 } parser_ast_update;
 
 
@@ -356,7 +356,7 @@ typedef struct _parser_ast_delete
     parser_ast_name         target;
     uint8                   alias[PARSER_MAX_ALIAS_NAME_LEN];
     uint16                  alias_len;
-    parser_ast_expr_list    *where;     // optional, can be NULL
+    parser_ast_expr         *where;     // optional, can be NULL
 } parser_ast_delete;
 
 
