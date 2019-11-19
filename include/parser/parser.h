@@ -134,10 +134,9 @@ typedef enum _parser_join_type
 typedef enum _parser_constraint_type
 {
     PARSER_CONSTRAINT_TYPE_CHECK = 1,
-    PARSER_CONSTRAINT_TYPE_DEFAULT = 2,
-    PARSER_CONSTRAINT_TYPE_UNIQUE = 3,
-    PARSER_CONSTRAINT_TYPE_PK = 4,
-    PARSER_CONSTRAINT_TYPE_FK = 5,
+    PARSER_CONSTRAINT_TYPE_UNIQUE = 2,
+    PARSER_CONSTRAINT_TYPE_PK = 3,
+    PARSER_CONSTRAINT_TYPE_FK = 4,
 } parser_constraint_type;
 
 
@@ -376,7 +375,7 @@ typedef struct _parser_ast_constr
         parser_ast_colname_list     columns;       // unique, pk
         struct {
             parser_ast_colname_list columns;       // fk (soruce)
-            parser_ast_colname_list ref_columns;   // fk (dest)
+            parser_ast_colname_list *ref_columns;  // fk (dest); optional
             parser_ast_name         ref_table;     // referenced table
             parser_on_delete        fk_on_delete;
         } fk;
@@ -485,7 +484,6 @@ typedef struct _parser_ast_rename_table
 // AST NODE: alter table rename constraint
 typedef struct _parser_ast_rename_constr
 {
-    parser_ast_name table;
     uint16          name_len;
     uint16          new_name_len;
     uint8           name[MAX_CONSTRAINT_NAME_LEN];
@@ -496,7 +494,6 @@ typedef struct _parser_ast_rename_constr
 // AST NODE: alter table rename column
 typedef struct _parser_ast_rename_column
 {
-    parser_ast_name table;
     uint16          name_len;
     uint16          new_name_len;
     uint8           name[MAX_TABLE_COL_NAME_LEN];

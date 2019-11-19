@@ -140,6 +140,7 @@ sint8 test_parser_compare_name(parser_ast_name *stmt1, parser_ast_name *stmt2)
 {
     if(test_parser_compare_mem(stmt1->first_part_len, stmt1->first_part, stmt2->first_part_len, stmt2->first_part) != 0)
     {
+printf("%d %d\n", stmt1->first_part_len, stmt2->first_part_len);
         puts("Statement compare: name first_part mismatch");
         return 1;
     }
@@ -864,13 +865,6 @@ sint8 test_parser_compare_constr(parser_ast_constr *stmt1, parser_ast_constr *st
                 return 1;
             }
             break;
-        case PARSER_CONSTRAINT_TYPE_DEFAULT:
-            if(test_parser_compare_expr(&stmt1->expr, &stmt2->expr) != 0)
-            {
-                puts("Statement compare: constr expr mismatch");
-                return 1;
-            }
-            break;
         case PARSER_CONSTRAINT_TYPE_UNIQUE:
         case PARSER_CONSTRAINT_TYPE_PK:
             if(test_parser_compare_colname_list(&stmt1->columns, &stmt2->columns) != 0)
@@ -892,10 +886,19 @@ sint8 test_parser_compare_constr(parser_ast_constr *stmt1, parser_ast_constr *st
                 return 1;
             }
 
-            if(test_parser_compare_colname_list(&stmt1->fk.ref_columns, &stmt2->fk.ref_columns) != 0)
+            if(test_parser_ptrs(stmt1->fk.ref_columns, stmt2->fk.ref_columns))
             {
-                puts("Statement compare: constr fk.ref_columns mismatch");
+                puts("Statement compare: constr fk.ref_columns pointer mismatch");
                 return 1;
+            }
+
+            if(stmt1->fk.ref_columns)
+            {
+                if(test_parser_compare_colname_list(stmt1->fk.ref_columns, stmt2->fk.ref_columns) != 0)
+                {
+                    puts("Statement compare: constr fk.ref_columns mismatch");
+                    return 1;
+                }
             }
 
             if(stmt1->fk.fk_on_delete != stmt2->fk.fk_on_delete)
@@ -1073,12 +1076,6 @@ sint8 test_parser_alter_table_rename_column(parser_ast_rename_column *stmt1, par
         return 1;
     }
 
-    if(test_parser_compare_name(&stmt1->table, &stmt2->table) != 0)
-    {
-        puts("Statement compare: alter table rename column table mismatch");
-        return 1;
-    }
-
     return 0;
 }
 
@@ -1093,12 +1090,6 @@ sint8 test_parser_alter_table_rename_constr(parser_ast_rename_constr *stmt1, par
     if(test_parser_compare_mem(stmt1->new_name_len, stmt1->new_name, stmt2->new_name_len, stmt2->new_name) != 0)
     {
         puts("Statement compare: alter table rename constraint new_name mismatch");
-        return 1;
-    }
-
-    if(test_parser_compare_name(&stmt1->table, &stmt2->table) != 0)
-    {
-        puts("Statement compare: alter table rename constraint table mismatch");
         return 1;
     }
 
@@ -1289,7 +1280,7 @@ int test_parser_functions()
     parser_ast_expr_list        having, having2;
     parser_ast_order_by         ordby, ordby2, ordby3, ordby4;
 
-    parser_ast_expr             complex_expr, expr1, expr2, ce[100];
+    parser_ast_expr             complex_expr, expr1, expr2, expr3, ce[100];
     parser_ast_expr             join_expr1, join_expr2, join_expr3;
 
 
@@ -1620,32 +1611,732 @@ int test_parser_functions()
     parser_deallocate_stmt(stmt);
 
 
-    // TODO: implement remaining tests
+    puts("Testing insert values statement parsing");
+
+    // full insert statement
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("INSERT INTO db.tbl (col1, col2, col3) VALUES (1, 'test', (10 + 1))");
+
+    ref_stmt.type = PARSER_STMT_TYPE_INSERT;
+    ref_stmt.insert_stmt.type = PARSER_STMT_TYPE_INSERT_VALUES;
+
+    // target
+    strcpy((char *)ref_stmt.insert_stmt.target.first_part, "db");
+    ref_stmt.insert_stmt.target.first_part_len = 2;
+    strcpy((char *)ref_stmt.insert_stmt.target.second_part, "tbl");
+    ref_stmt.insert_stmt.target.second_part_len = 3;
+
+    // columns
+    parser_ast_colname_list col1, col2, col3;
+    strcpy((char *)col1.col_name, "col1");
+    col1.colname_len = 4;
+    col1.next = &col2;
+    strcpy((char *)col2.col_name, "col2");
+    col2.colname_len = 4;
+    col2.next = &col3;
+    strcpy((char *)col3.col_name, "col3");
+    col3.colname_len = 4;
+    col3.next = NULL;
+    ref_stmt.insert_stmt.columns = &col1;
+
+    // values
+    ref_stmt.insert_stmt.values.named = 0;
+    ref_stmt.insert_stmt.values.expr.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&ref_stmt.insert_stmt.values.expr.num, 0, sizeof(decimal));
+    ref_stmt.insert_stmt.values.expr.num.sign = DECIMAL_SIGN_POS;
+    ref_stmt.insert_stmt.values.expr.num.n = 1;
+    ref_stmt.insert_stmt.values.expr.num.m[0] = 1;
+    ref_stmt.insert_stmt.values.next = &proj1;
+
+    proj1.named = 0;
+    proj1.expr.node_type = PARSER_EXPR_NODE_TYPE_STR;
+    proj1.expr.str = strlit1;
+    string_literal_truncate(strlit1);
+    string_literal_append_char(strlit1, (const uint8 *)_ach("test"), strlen(_ach("test")));
+    proj1.next = &proj2;
+
+    proj2.named = 0;
+    proj2.expr.node_type = PARSER_EXPR_NODE_TYPE_OP;
+    proj2.expr.op = PARSER_EXPR_OP_TYPE_ADD;
+    proj2.expr.left = &expr1;
+    proj2.expr.right = &expr2;
+    proj2.next = NULL;
+
+    expr1.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&expr1.num, 0, sizeof(decimal));
+    expr1.num.sign = DECIMAL_SIGN_POS;
+    expr1.num.n = 2;
+    expr1.num.m[0] = 10;
+
+    expr2.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&expr2.num, 0, sizeof(decimal));
+    expr2.num.sign = DECIMAL_SIGN_POS;
+    expr2.num.n = 1;
+    expr2.num.m[0] = 1;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // insert without col list
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("INSERT INTO db.tbl VALUES (1, 'test', (10 + 1))");
+
+    ref_stmt.insert_stmt.columns = NULL;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+
     puts("Testing insert as select statement parsing");
 
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("INSERT INTO db.tbl (col1, col2, col3) SELECT distinct *");
 
-    puts("Testing insert values statement parsing");
+    ref_stmt.insert_stmt.type = PARSER_STMT_TYPE_INSERT_SELECT;
+    ref_stmt.insert_stmt.columns = &col1;
+    ref_stmt.insert_stmt.select_stmt.next = NULL;
+    ref_stmt.insert_stmt.select_stmt.order_by = NULL;
+    ref_stmt.insert_stmt.select_stmt.select = &ssel1;
+    memset(&ssel1, 0, sizeof(ssel1));
+    ssel1.uniq_type = PARSER_UNIQ_TYPE_DISTINCT;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
 
 
     puts("Testing update statement parsing");
 
+    parser_ast_set_list sl1;
+
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("update tbl as t set t.c1 = c1 - 1, c2 = NULL  where c1 = 1");
+
+    ref_stmt.type = PARSER_STMT_TYPE_UPDATE;
+    ref_stmt.update_stmt.alias[0]=_ach('t');
+    ref_stmt.update_stmt.alias_len = 1;
+    strcpy((char *)ref_stmt.update_stmt.target.first_part, _ach("tbl"));
+    ref_stmt.update_stmt.target.first_part_len = strlen(_ach("tbl"));
+    ref_stmt.update_stmt.target.second_part_len = 0;
+    ref_stmt.update_stmt.set_list.column.first_part[0] = _ach('t');
+    ref_stmt.update_stmt.set_list.column.first_part_len = 1;
+    ref_stmt.update_stmt.set_list.column.second_part[0] = _ach('c');
+    ref_stmt.update_stmt.set_list.column.second_part[1] = _ach('1');
+    ref_stmt.update_stmt.set_list.column.second_part_len = 2;
+    ref_stmt.update_stmt.set_list.expr.node_type = PARSER_EXPR_NODE_TYPE_OP;
+    ref_stmt.update_stmt.set_list.expr.op = PARSER_EXPR_OP_TYPE_SUB;
+    ref_stmt.update_stmt.set_list.expr.left = &ce[0];
+    ce[0].node_type = PARSER_EXPR_NODE_TYPE_NAME;
+    ce[0].name.first_part[0] = _ach('c');
+    ce[0].name.first_part[1] = _ach('1');
+    ce[0].name.first_part_len = 2;
+    ce[0].name.second_part_len = 0;
+    ref_stmt.update_stmt.set_list.expr.right = &ce[1];
+    ce[1].node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&ce[1].num, 0, sizeof(ce[1].num));
+    ce[1].num.sign = DECIMAL_SIGN_POS;
+    ce[1].num.m[0] = 1;
+    ce[1].num.n = 1;
+    ref_stmt.update_stmt.set_list.next = &sl1;
+    sl1.next = NULL;
+    sl1.column.first_part[0] = _ach('c');
+    sl1.column.first_part[1] = _ach('2');
+    sl1.column.first_part_len = 2;
+    sl1.column.second_part_len = 0;
+    sl1.expr.node_type = PARSER_EXPR_NODE_TYPE_NULL;
+    ref_stmt.update_stmt.where = &expr1;
+    expr1.node_type = PARSER_EXPR_NODE_TYPE_OP;
+    expr1.op = PARSER_EXPR_OP_TYPE_EQ;
+    expr1.left = &expr2;
+    expr2.node_type = PARSER_EXPR_NODE_TYPE_NAME;
+    expr2.name.first_part[0] = _ach('c');
+    expr2.name.first_part[1] = _ach('1');
+    expr2.name.first_part_len = 2;
+    expr2.name.second_part_len = 0;
+    expr1.right = &expr3;
+    expr3.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&expr3.num, 0, sizeof(expr3.num));
+    expr3.num.sign = DECIMAL_SIGN_POS;
+    expr3.num.m[0] = 1;
+    expr3.num.n = 1;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
 
     puts("Testing delete statement parsing");
+
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("delete from tbl as t where c1 = 1");
+
+    ref_stmt.type = PARSER_STMT_TYPE_DELETE;
+    ref_stmt.delete_stmt.alias[0]=_ach('t');
+    ref_stmt.delete_stmt.alias_len = 1;
+    strcpy((char *)ref_stmt.delete_stmt.target.first_part, _ach("tbl"));
+    ref_stmt.delete_stmt.target.first_part_len = strlen(_ach("tbl"));
+    ref_stmt.delete_stmt.target.second_part_len = 0;
+    ref_stmt.delete_stmt.where = &expr1;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
 
 
     puts("Testing create table statement parsing");
 
+    parser_ast_col_desc_list cdl[15];
+    parser_ast_constr_list constr[10];
+
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("create table tbl (\n\
+                                 col1  CHARACTER VARYING(65536) default 123 NULL,\n\
+                                 col2  DECIMAL(40,2) not null,\n\
+                                 col3  INTEGER,\n\
+                                 col4  SMALLINT,\n\
+                                 col5  FLOAT,\n\
+                                 col6  DOUBLE PRECISION,\n\
+                                 col7  DATE,\n\
+                                 col8  TIMESTAMP(5),\n\
+                                 col9  TIMESTAMP WITH TIME ZONE(2),\n\
+                                 col10 VARCHAR NULL,\n\
+                                 col11 DECIMAL(10),\n\
+                                 col12 NUMBER,\n\
+                                 col13 TIMESTAMP,\n\
+                                 col14 TIMESTAMP WITH TIME ZONE,\n\
+                                 constraint check_1 check (col1 > 1), \n\
+                                 constraint uk_2 unique (col1,col2,col3),\n\
+                                 constraint pk_3 primary key (col1,col2,col3),\n\
+                                 constraint fk_4 foreign key (col1,col2,col3) references ttt (col1,col2,col3) on delete cascade,\n\
+                                 constraint fk_5 foreign key (col1,col2,col3) references ttt on delete set null\n\
+                                )");
+
+    ref_stmt.type = PARSER_STMT_TYPE_CREATE_TABLE;
+    strcpy((char *)ref_stmt.create_table_stmt.name.first_part, _ach("tbl"));
+    ref_stmt.create_table_stmt.name.first_part_len = strlen(_ach("tbl"));
+    ref_stmt.create_table_stmt.name.second_part_len = 0;
+
+    // columns
+    ref_stmt.create_table_stmt.cols.col_desc.datatype.datatype = CHARACTER_VARYING;
+    ref_stmt.create_table_stmt.cols.col_desc.datatype.char_len = 65536;
+    ref_stmt.create_table_stmt.cols.col_desc.default_value = &expr1;
+    strcpy((char *)ref_stmt.create_table_stmt.cols.col_desc.name, _ach("col1"));
+    ref_stmt.create_table_stmt.cols.col_desc.name_len = 4;
+    ref_stmt.create_table_stmt.cols.col_desc.nullable = 1;
+    ref_stmt.create_table_stmt.cols.next = &cdl[0];
+
+    expr1.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&expr1.num, 0, sizeof(expr1.num));
+    expr1.num.sign = DECIMAL_SIGN_POS;
+    expr1.num.m[0] = 123;
+    expr1.num.n = 3;
+
+    cdl[0].col_desc.datatype.datatype = DECIMAL;
+    cdl[0].col_desc.datatype.decimal.precision = 40;
+    cdl[0].col_desc.datatype.decimal.scale = 2;
+    cdl[0].col_desc.default_value = NULL;
+    strcpy((char *)cdl[0].col_desc.name, _ach("col2"));
+    cdl[0].col_desc.name_len = 4;
+    cdl[0].col_desc.nullable = 2;
+    cdl[0].next = &cdl[1];
+
+    cdl[1].col_desc.datatype.datatype = INTEGER;
+    cdl[1].col_desc.default_value = NULL;
+    strcpy((char *)cdl[1].col_desc.name, _ach("col3"));
+    cdl[1].col_desc.name_len = 4;
+    cdl[1].col_desc.nullable = 0;
+    cdl[1].next = &cdl[2];
+
+    cdl[2].col_desc.datatype.datatype = SMALLINT;
+    cdl[2].col_desc.default_value = NULL;
+    strcpy((char *)cdl[2].col_desc.name, _ach("col4"));
+    cdl[2].col_desc.name_len = 4;
+    cdl[2].col_desc.nullable = 0;
+    cdl[2].next = &cdl[3];
+
+    cdl[3].col_desc.datatype.datatype = FLOAT;
+    cdl[3].col_desc.default_value = NULL;
+    strcpy((char *)cdl[3].col_desc.name, _ach("col5"));
+    cdl[3].col_desc.name_len = 4;
+    cdl[3].col_desc.nullable = 0;
+    cdl[3].next = &cdl[4];
+
+    cdl[4].col_desc.datatype.datatype = DOUBLE_PRECISION;
+    cdl[4].col_desc.default_value = NULL;
+    strcpy((char *)cdl[4].col_desc.name, _ach("col6"));
+    cdl[4].col_desc.name_len = 4;
+    cdl[4].col_desc.nullable = 0;
+    cdl[4].next = &cdl[5];
+
+    cdl[5].col_desc.datatype.datatype = DATE;
+    cdl[5].col_desc.default_value = NULL;
+    strcpy((char *)cdl[5].col_desc.name, _ach("col7"));
+    cdl[5].col_desc.name_len = 4;
+    cdl[5].col_desc.nullable = 0;
+    cdl[5].next = &cdl[6];
+
+    cdl[6].col_desc.datatype.datatype = TIMESTAMP;
+    cdl[6].col_desc.datatype.ts_precision = 5;
+    cdl[6].col_desc.default_value = NULL;
+    strcpy((char *)cdl[6].col_desc.name, _ach("col8"));
+    cdl[6].col_desc.name_len = 4;
+    cdl[6].col_desc.nullable = 0;
+    cdl[6].next = &cdl[7];
+
+    cdl[7].col_desc.datatype.datatype = TIMESTAMP_WITH_TZ;
+    cdl[7].col_desc.datatype.ts_precision = 2;
+    cdl[7].col_desc.default_value = NULL;
+    strcpy((char *)cdl[7].col_desc.name, _ach("col9"));
+    cdl[7].col_desc.name_len = 4;
+    cdl[7].col_desc.nullable = 0;
+    cdl[7].next = &cdl[8];
+
+    cdl[8].col_desc.datatype.datatype = CHARACTER_VARYING;
+    cdl[8].col_desc.datatype.char_len = PARSER_DEFAULT_VARCHAR_LEN;
+    cdl[8].col_desc.default_value = NULL;
+    strcpy((char *)cdl[8].col_desc.name, _ach("col10"));
+    cdl[8].col_desc.name_len = 5;
+    cdl[8].col_desc.nullable = 1;
+    cdl[8].next = &cdl[9];
+
+    cdl[9].col_desc.datatype.datatype = DECIMAL;
+    cdl[9].col_desc.datatype.decimal.precision = 10;
+    cdl[9].col_desc.datatype.decimal.scale = 0;
+    cdl[9].col_desc.default_value = NULL;
+    strcpy((char *)cdl[9].col_desc.name, _ach("col11"));
+    cdl[9].col_desc.name_len = 5;
+    cdl[9].col_desc.nullable = 0;
+    cdl[9].next = &cdl[10];
+
+    cdl[10].col_desc.datatype.datatype = DECIMAL;
+    cdl[10].col_desc.datatype.decimal.precision = PARSER_DEFAULT_DECIMAL_PRECISION;
+    cdl[10].col_desc.datatype.decimal.scale = PARSER_DEFAULT_DECIMAL_SCALE;
+    cdl[10].col_desc.default_value = NULL;
+    strcpy((char *)cdl[10].col_desc.name, _ach("col12"));
+    cdl[10].col_desc.name_len = 5;
+    cdl[10].col_desc.nullable = 0;
+    cdl[10].next = &cdl[11];
+
+    cdl[11].col_desc.datatype.datatype = TIMESTAMP;
+    cdl[11].col_desc.datatype.ts_precision = PARSER_DEFAULT_TS_PRECISION;
+    cdl[11].col_desc.default_value = NULL;
+    strcpy((char *)cdl[11].col_desc.name, _ach("col13"));
+    cdl[11].col_desc.name_len = 5;
+    cdl[11].col_desc.nullable = 0;
+    cdl[11].next = &cdl[12];
+
+    cdl[12].col_desc.datatype.datatype = TIMESTAMP_WITH_TZ;
+    cdl[12].col_desc.datatype.ts_precision = PARSER_DEFAULT_TS_PRECISION;
+    cdl[12].col_desc.default_value = NULL;
+    strcpy((char *)cdl[12].col_desc.name, _ach("col14"));
+    cdl[12].col_desc.name_len = 5;
+    cdl[12].col_desc.nullable = 0;
+    cdl[12].next = NULL;
+
+    // constraints
+    ref_stmt.create_table_stmt.constr = &constr[0];
+    constr[0].constr.type = PARSER_CONSTRAINT_TYPE_CHECK;
+    constr[0].constr.name_len = 7;
+    strcpy((char *)constr[0].constr.name, _ach("check_1"));
+    constr[0].next = &constr[1];
+    constr[0].constr.expr.node_type = PARSER_EXPR_NODE_TYPE_OP;
+    constr[0].constr.expr.op = PARSER_EXPR_OP_TYPE_GT;
+    constr[0].constr.expr.left = &expr2;
+    expr2.node_type = PARSER_EXPR_NODE_TYPE_NAME;
+    strcpy((char *)expr2.name.first_part, _ach("col1"));
+    expr2.name.first_part_len = 4;
+    expr2.name.second_part_len = 0;
+    constr[0].constr.expr.right = &expr3;
+    expr3.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&expr3.num, 0, sizeof(expr3.num));
+    expr3.num.sign = DECIMAL_SIGN_POS;
+    expr3.num.m[0] = 1;
+    expr3.num.n = 1;
+
+    constr[1].constr.type = PARSER_CONSTRAINT_TYPE_UNIQUE;
+    constr[1].constr.name_len = 4;
+    strcpy((char *)constr[1].constr.name, _ach("uk_2"));
+    constr[1].next = &constr[2];
+    strcpy((char *)constr[1].constr.columns.col_name, "col1");
+    constr[1].constr.columns.colname_len = 4;
+    constr[1].constr.columns.next = &col2;
+    strcpy((char *)col2.col_name, "col2");
+    col2.colname_len = 4;
+    col2.next = &col3;
+    strcpy((char *)col3.col_name, "col3");
+    col3.colname_len = 4;
+    col3.next = NULL;
+
+    constr[2].constr.type = PARSER_CONSTRAINT_TYPE_PK;
+    constr[2].constr.name_len = 4;
+    strcpy((char *)constr[2].constr.name, _ach("pk_3"));
+    constr[2].next = &constr[3];
+    strcpy((char *)constr[2].constr.columns.col_name, "col1");
+    constr[2].constr.columns.colname_len = 4;
+    constr[2].constr.columns.next = &col2;
+
+    constr[3].constr.type = PARSER_CONSTRAINT_TYPE_FK;
+    constr[3].constr.name_len = 4;
+    strcpy((char *)constr[3].constr.name, _ach("fk_4"));
+    constr[3].next = &constr[4];
+    strcpy((char *)constr[3].constr.fk.columns.col_name, "col1");
+    constr[3].constr.fk.columns.colname_len = 4;
+    constr[3].constr.fk.columns.next = &col2;
+    strcpy((char *)constr[3].constr.fk.ref_table.first_part, _ach("ttt"));
+    constr[3].constr.fk.ref_table.first_part_len = 3;
+    constr[3].constr.fk.ref_table.second_part_len = 0;
+    constr[3].constr.fk.ref_columns = &col1;
+    constr[3].constr.fk.fk_on_delete = PARSER_ON_DELETE_CASCADE;
+
+    constr[4].constr.type = PARSER_CONSTRAINT_TYPE_FK;
+    constr[4].constr.name_len = 4;
+    strcpy((char *)constr[4].constr.name, _ach("fk_5"));
+    constr[4].next = NULL;
+    strcpy((char *)constr[4].constr.fk.columns.col_name, "col1");
+    constr[4].constr.fk.columns.colname_len = 4;
+    constr[4].constr.fk.columns.next = &col2;
+    strcpy((char *)constr[4].constr.fk.ref_table.first_part, _ach("ttt"));
+    constr[4].constr.fk.ref_table.first_part_len = 3;
+    constr[4].constr.fk.ref_table.second_part_len = 0;
+    constr[4].constr.fk.ref_columns = NULL;
+    constr[4].constr.fk.fk_on_delete = PARSER_ON_DELETE_SET_NULL;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
 
     puts("Testing drop table statement parsing");
+
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" drop table my_db.table_123 ");
+
+    ref_stmt.type = PARSER_STMT_TYPE_DROP_TABLE;
+    strcpy((char *)ref_stmt.drop_table_stmt.table.first_part, _ach("my_db"));
+    ref_stmt.drop_table_stmt.table.first_part_len = 5;
+    strcpy((char *)ref_stmt.drop_table_stmt.table.second_part, _ach("table_123"));
+    ref_stmt.drop_table_stmt.table.second_part_len = 9;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
 
 
     puts("Testing create database statement parsing");
 
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" create database _my_db ");
+
+    ref_stmt.type = PARSER_STMT_TYPE_CREATE_DATABASE;
+    strcpy((char *)ref_stmt.create_database_stmt.name, _ach("_my_db"));
+    ref_stmt.create_database_stmt.name_len = 6;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
 
     puts("Testing drop database statement parsing");
 
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" drop database my_db_1 ");
+
+    ref_stmt.type = PARSER_STMT_TYPE_DROP_DATABASE;
+    strcpy((char *)ref_stmt.drop_database_stmt.name, _ach("my_db_1"));
+    ref_stmt.drop_database_stmt.name_len = 7;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
 
     puts("Testing alter table statement parsing");
+
+    parser_ast_col_datatype coldt;
+
+    // alter table add/modify/drop column
+
+    // add 1
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt add column col_1 varchar(100) default 5 not null ");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_ADD_COL;
+    strcpy((char *)ref_stmt.alter_table_stmt.column.column, _ach("col_1"));
+    ref_stmt.alter_table_stmt.column.column_len = 5;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+    ref_stmt.alter_table_stmt.column.datatype = &coldt;
+    coldt.datatype = CHARACTER_VARYING;
+    coldt.char_len = 100;
+    ref_stmt.alter_table_stmt.column.nullable = 2;
+    ref_stmt.alter_table_stmt.column.default_expr = &expr1;
+    expr1.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&expr1.num, 0, sizeof(expr1.num));
+    expr1.num.sign = DECIMAL_SIGN_POS;
+    expr1.num.m[0] = 5;
+    expr1.num.n = 1;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // add 2
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt add col_1 varchar null ");
+
+    coldt.char_len = PARSER_DEFAULT_VARCHAR_LEN;
+    ref_stmt.alter_table_stmt.column.nullable = 1;
+    ref_stmt.alter_table_stmt.column.default_expr = NULL;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // add 3
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt add col_1 smallint");
+
+    coldt.datatype = SMALLINT;
+    ref_stmt.alter_table_stmt.column.nullable = 0;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // modify 1
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt modify column col_1 varchar(200) default 5 not null ");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_MODIFY_COL;
+    strcpy((char *)ref_stmt.alter_table_stmt.column.column, _ach("col_1"));
+    ref_stmt.alter_table_stmt.column.column_len = 5;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+    ref_stmt.alter_table_stmt.column.datatype = &coldt;
+    coldt.datatype = CHARACTER_VARYING;
+    coldt.char_len = 200;
+    ref_stmt.alter_table_stmt.column.nullable = 2;
+    ref_stmt.alter_table_stmt.column.default_expr = &expr1;
+    expr1.node_type = PARSER_EXPR_NODE_TYPE_NUM;
+    memset(&expr1.num, 0, sizeof(expr1.num));
+    expr1.num.sign = DECIMAL_SIGN_POS;
+    expr1.num.m[0] = 5;
+    expr1.num.n = 1;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // modify 2
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt alter column col_1 varchar(200) default 5 not null ");
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // modify 3
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt modify col_1 varchar(200) default 5 not null ");
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // drop 1
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt drop column col_1 ");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_DROP_COL;
+    strcpy((char *)ref_stmt.alter_table_stmt.column.column, _ach("col_1"));
+    ref_stmt.alter_table_stmt.column.column_len = 5;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+    ref_stmt.alter_table_stmt.column.datatype = NULL;
+    ref_stmt.alter_table_stmt.column.nullable = 0;
+    ref_stmt.alter_table_stmt.column.default_expr = NULL;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // drop 2
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt drop col_1 ");
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+
+    // alter table add/drop containt
+
+    // add 1
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt add constraint constr_1 unique (col_1) ");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_ADD_CONSTR;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+    strcpy((char *)ref_stmt.alter_table_stmt.add_constr.columns.col_name, _ach("col_1"));
+    ref_stmt.alter_table_stmt.add_constr.columns.colname_len = 5;
+    ref_stmt.alter_table_stmt.add_constr.columns.next = NULL;
+    ref_stmt.alter_table_stmt.add_constr.type = PARSER_CONSTRAINT_TYPE_UNIQUE;
+    strcpy((char *)ref_stmt.alter_table_stmt.add_constr.name, _ach("constr_1"));
+    ref_stmt.alter_table_stmt.add_constr.name_len = 8;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // drop 1
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach(" alter table ttt drop constraint constr_1");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_DROP_CONSTR;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+    strcpy((char *)ref_stmt.alter_table_stmt.drop_constr.name, _ach("constr_1"));
+    ref_stmt.alter_table_stmt.drop_constr.name_len = 8;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+
+    // rename table/column/constraint
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("alter table ttt rename to ttt1");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_RENAME;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+
+    strcpy((char *)ref_stmt.alter_table_stmt.rename_table.new_name, _ach("ttt1"));
+    ref_stmt.alter_table_stmt.rename_table.new_name_len = 4;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // rename column
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("alter table ttt rename column col_1 to col2");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_RENAME_COLUMN;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+
+    strcpy((char *)ref_stmt.alter_table_stmt.rename_column.new_name, _ach("col2"));
+    ref_stmt.alter_table_stmt.rename_column.new_name_len = 4;
+    strcpy((char *)ref_stmt.alter_table_stmt.rename_column.name, _ach("col_1"));
+    ref_stmt.alter_table_stmt.rename_column.name_len = 5;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
+    // rename constraint
+    g_test_parser_state.cur_char = 0;
+    g_test_parser_state.stmt = _ach("alter table ttt rename constraint constr_1 to constr2");
+
+    ref_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE;
+    ref_stmt.alter_table_stmt.type = PARSER_STMT_TYPE_ALTER_TABLE_RENAME_CONSTR;
+    strcpy((char *)ref_stmt.alter_table_stmt.table.first_part, _ach("ttt"));
+    ref_stmt.alter_table_stmt.table.first_part_len = 3;
+    ref_stmt.alter_table_stmt.table.second_part_len = 0;
+
+    strcpy((char *)ref_stmt.alter_table_stmt.rename_constr.new_name, _ach("constr2"));
+    ref_stmt.alter_table_stmt.rename_constr.new_name_len = 7;
+    strcpy((char *)ref_stmt.alter_table_stmt.rename_constr.name, _ach("constr_1"));
+    ref_stmt.alter_table_stmt.rename_constr.name_len = 8;
+
+    if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
+    if(stmt == NULL) return __LINE__;
+
+    if(test_parser_compare_stmt(stmt, &ref_stmt) != 0) return __LINE__;
+
+    parser_deallocate_stmt(stmt);
+
 
     return 0;
 }

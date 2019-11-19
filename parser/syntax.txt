@@ -135,7 +135,7 @@ other - terminals (optionally in double quotes)
 <alter_statement> := <alter_table_statement>
 
 <alter_table_statement> := ALTER TABLE <name> ( <add_column> | <modify_column> | <drop_column> | <add_constraint> | <drop_constraint> | <rename> )
-<add_column> := ADD [ COLUMN ] <identifier> <data_type> 
+<add_column> := ADD [ COLUMN ] <identifier> <data_type> [ DEFAULT <expression> ] [ [ NOT ] NULL ]
 <modify_column> := ( ALTER | MODIFY ) [ COLUMN ] <identifier> [ <data_type> ]  [ DEFAULT <expression> ] [ [ NOT ] NULL ]
 <drop column> := DROP [ COLUMN ] <identifier>
 <add_constraint> := ADD <table_constraint>

@@ -26,7 +26,7 @@ typedef enum _lexer_lexem_type
 } lexer_lexem_type;
 
 
-#define LEXER_RESERVED_WORD_NUM     (71)
+#define LEXER_RESERVED_WORD_NUM     (75)
 
 // the list must be sorted by ASCII code number (alphabetically)
 typedef enum _lexer_reserved_word
@@ -93,6 +93,7 @@ typedef enum _lexer_reserved_word
     LEXER_RESERVED_WORD_SET,
     LEXER_RESERVED_WORD_SMALLINT,
     LEXER_RESERVED_WORD_TABLE,
+    LEXER_RESERVED_WORD_TIME,
     LEXER_RESERVED_WORD_TIMESTAMP,
     LEXER_RESERVED_WORD_TO,
     LEXER_RESERVED_WORD_UNION,
@@ -102,6 +103,8 @@ typedef enum _lexer_reserved_word
     LEXER_RESERVED_WORD_VARCHAR,
     LEXER_RESERVED_WORD_VARYING,
     LEXER_RESERVED_WORD_WHERE,
+    LEXER_RESERVED_WORD_WITH,
+    LEXER_RESERVED_WORD_ZONE,
 } lexer_reserved_word;
 
 

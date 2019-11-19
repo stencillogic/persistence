@@ -38,13 +38,13 @@ typedef struct _lexer_char
 int g_lexer_reserved_word_diap[27] =
 {
 //  A   B   C   D   E   F   G   H   I   J   K   L   M   N   O   P   Q   R   S   T   U   V   W   X   Y   Z   <top>
-    1,  8,  9, 16, 25, 26, 31, 32, 33, 39, 40, 41, 43, 44, 49, 53,  0, 55, 59, 62, 65, 68, 71,  0,  0,  0,  72
+    1,  8,  9, 16, 25, 26, 31, 32, 33, 39, 40, 41, 43, 44, 49, 53,  0, 55, 59, 62, 66, 69, 72,  0,  0,  74, 75
 };
 
 
 // the order must correspnd to the oreder of enum lexer_reserved_word
 // and sorted by ASCII code number (alphabetically)
-const achar *g_lexer_reserved_words[72] =
+const achar *g_lexer_reserved_words[75] =
 {
     NULL,
     _ach("ACTION"),
@@ -109,6 +109,7 @@ const achar *g_lexer_reserved_words[72] =
     _ach("SET"),
     _ach("SMALLINT"),
     _ach("TABLE"),
+    _ach("TIME"),
     _ach("TIMESTAMP"),
     _ach("TO"),
     _ach("UNION"),
@@ -118,6 +119,8 @@ const achar *g_lexer_reserved_words[72] =
     _ach("VARCHAR"),
     _ach("VARYING"),
     _ach("WHERE"),
+    _ach("WITH"),
+    _ach("ZONE"),
 };
 
 
@@ -584,6 +587,7 @@ sint8 lexer_next_identifier(lexer_state *ls)
             }
             else
             {
+                ls->ucase_identifier[0] = _ach('\0');
                 ucase_identifier_len = -2;
             }
             ucase_identifier_len ++;
