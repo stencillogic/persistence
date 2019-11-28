@@ -13,7 +13,9 @@ typedef enum _error_code
     ERROR_DECIMAL_OVERFLOW = 3,
     ERROR_DIVISION_BY_ZERO = 4,
     ERROR_INVALID_DECIMAL_FORMAT = 5,
-    ERROR_SYNTAX_ERROR = 6
+    ERROR_SYNTAX_ERROR = 6,
+    ERROR_DATATYPE_MISMATCH = 7,
+    ERROR_OUT_OF_MEMORY = 8,
 } error_code;
 
 // return error code of last operation

@@ -78,7 +78,7 @@ sint8 parser_allocate_ast_el(void **ptr, size_t sz)
     void *new_base = realloc(g_parser_state.stmt_base, g_parser_state.total_sz + sz);
     if(NULL == new_base)
     {
-        if(0 != parser_report_error(_ach("statement is too long; out of memory"))) return -1;
+        if(g_parser_state.report_error(ERROR_OUT_OF_MEMORY, NULL) != 0) return -1;
         return 1;
     }
 

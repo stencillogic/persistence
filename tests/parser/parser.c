@@ -140,7 +140,6 @@ sint8 test_parser_compare_name(parser_ast_name *stmt1, parser_ast_name *stmt2)
 {
     if(test_parser_compare_mem(stmt1->first_part_len, stmt1->first_part, stmt2->first_part_len, stmt2->first_part) != 0)
     {
-printf("%d %d\n", stmt1->first_part_len, stmt2->first_part_len);
         puts("Statement compare: name first_part mismatch");
         return 1;
     }

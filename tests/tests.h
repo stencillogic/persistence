@@ -41,4 +41,10 @@ int test_pproto_server_functions();
 // test parser functions
 int test_parser_functions();
 
+// test stack functions
+int test_stack_functions();
+
+// test expression functions
+int test_expression_functions();
+
 #endif

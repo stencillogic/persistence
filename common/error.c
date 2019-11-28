@@ -1,6 +1,6 @@
 #include "common/error.h"
 
-#define ERROR_CODE_NUM 7
+#define ERROR_CODE_NUM 9
 
 achar *g_error_msg[] =
 {
@@ -10,7 +10,9 @@ achar *g_error_msg[] =
     _ach("ECODE=00004: numeric overflow"),
     _ach("ECODE=00005: division by zero"),
     _ach("ECODE=00006: invalid decimal format"),
-    _ach("ECODE=00007: syntax error")
+    _ach("ECODE=00007: syntax error"),
+    _ach("ECODE=00008: datatype mismatch"),
+    _ach("ECODE=00009: out of memory"),
 };
 
 error_code g_current_error_code = 0;

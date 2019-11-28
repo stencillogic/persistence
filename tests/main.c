@@ -34,6 +34,8 @@ int main(int argc, char **argv)
     process_test_fail(test_lexer_functions(), "test_lexer_functions");
     process_test_fail(test_pproto_server_functions(), "test_pproto_server_functions");
     process_test_fail(test_parser_functions(), "test_parser_functions");
+    process_test_fail(test_stack_functions(), "test_stack_functions");
+    process_test_fail(test_expression_functions(), "test_expression_functions");
 
     printf("Test execution completed.\n");
     return 0;

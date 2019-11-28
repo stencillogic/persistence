@@ -148,6 +148,7 @@ typedef enum _parser_expr_node_type
     PARSER_EXPR_NODE_TYPE_NAME = 3,
     PARSER_EXPR_NODE_TYPE_OP = 4,
     PARSER_EXPR_NODE_TYPE_NULL = 5,
+    PARSER_EXPR_NODE_TYPE_BOOL = 6,
 } parser_expr_node_type;
 
 
@@ -199,6 +200,7 @@ typedef struct _parser_ast_expr
 {
     union
     {
+        uint8               boolean;
         parser_expr_op_type op;
         void                *str;
         decimal             num;
