@@ -502,19 +502,10 @@ sint8 test_parser_compare_select_stmt(parser_ast_select *stmt1, parser_ast_selec
         return 1;
     }
 
-    if(test_parser_ptrs(stmt1->select, stmt2->select))
+    if(test_parser_compare_single_select(&stmt1->select, &stmt2->select) != 0)
     {
-        puts("Statement compare: select statement single select pointers mismatch");
+        puts("Statement compare: select statement single select mismatch");
         return 1;
-    }
-
-    if(stmt1->select)
-    {
-        if(test_parser_compare_single_select(stmt1->select, stmt2->select) != 0)
-        {
-            puts("Statement compare: select statement single select mismatch");
-            return 1;
-        }
     }
 
     if(test_parser_ptrs(stmt1->next, stmt2->next))
@@ -1270,7 +1261,6 @@ int test_parser_functions()
     if(NULL == strlit2) return __LINE__;
     string_literal_append_char(strlit2, (const uint8 *)_ach("bgd 123"), strlen(_ach("bgd 123")));
 
-    parser_ast_single_select    ssel1, ssel2, ssel3, ssel4, subq_sel;
     parser_ast_select           sel1, sel2, sel3, sel4;
 
     parser_ast_expr_list        proj1, proj2, proj3;
@@ -1479,13 +1469,12 @@ int test_parser_functions()
     from2.type = PARSER_FROM_TYPE_SUBQUERY;
     from2.subquery.next = NULL;
     from2.subquery.order_by = NULL;
-    from2.subquery.select = &subq_sel;
-    subq_sel.from = NULL;
-    subq_sel.group_by = NULL;
-    subq_sel.having = NULL;
-    subq_sel.projection = NULL;
-    subq_sel.uniq_type = PARSER_UNIQ_TYPE_ALL;
-    subq_sel.where = NULL;
+    from2.subquery.select.from = NULL;
+    from2.subquery.select.group_by = NULL;
+    from2.subquery.select.having = NULL;
+    from2.subquery.select.projection = NULL;
+    from2.subquery.select.uniq_type = PARSER_UNIQ_TYPE_ALL;
+    from2.subquery.select.where = NULL;
 
     from2.join_type = PARSER_JOIN_TYPE_CROSS;
     from2.on_expr = &join_expr1;
@@ -1549,53 +1538,49 @@ int test_parser_functions()
     ordby4.next = NULL;
 
     // single selects
-    ssel1.uniq_type = PARSER_UNIQ_TYPE_ALL;
-    ssel2.uniq_type = PARSER_UNIQ_TYPE_DISTINCT;
-    ssel3.uniq_type = PARSER_UNIQ_TYPE_ALL;
-    ssel4.uniq_type = PARSER_UNIQ_TYPE_DISTINCT;
+    sel1.select.uniq_type = PARSER_UNIQ_TYPE_ALL;
+    sel2.select.uniq_type = PARSER_UNIQ_TYPE_DISTINCT;
+    sel3.select.uniq_type = PARSER_UNIQ_TYPE_ALL;
+    sel4.select.uniq_type = PARSER_UNIQ_TYPE_DISTINCT;
 
-    ssel1.projection = &proj1;
-    ssel2.projection = NULL;
-    ssel3.projection = NULL;
-    ssel4.projection = NULL;
+    sel1.select.projection = &proj1;
+    sel2.select.projection = NULL;
+    sel3.select.projection = NULL;
+    sel4.select.projection = NULL;
 
-    ssel1.from = &from;
-    ssel2.from = NULL;
-    ssel3.from = NULL;
-    ssel4.from = NULL;
+    sel1.select.from = &from;
+    sel2.select.from = NULL;
+    sel3.select.from = NULL;
+    sel4.select.from = NULL;
 
-    ssel1.where = &join_expr1;
-    ssel2.where = NULL;
-    ssel3.where = NULL;
-    ssel4.where = NULL;
+    sel1.select.where = &join_expr1;
+    sel2.select.where = NULL;
+    sel3.select.where = NULL;
+    sel4.select.where = NULL;
 
-    ssel1.group_by = &grby;
-    ssel2.group_by = NULL;
-    ssel3.group_by = NULL;
-    ssel4.group_by = NULL;
+    sel1.select.group_by = &grby;
+    sel2.select.group_by = NULL;
+    sel3.select.group_by = NULL;
+    sel4.select.group_by = NULL;
 
-    ssel1.having = &having;
-    ssel2.having = NULL;
-    ssel3.having = NULL;
-    ssel4.having = NULL;
+    sel1.select.having = &having;
+    sel2.select.having = NULL;
+    sel3.select.having = NULL;
+    sel4.select.having = NULL;
 
     // full select statement
-    sel1.select = &ssel1;
     sel1.next = &sel2;
     sel1.setop = PARSER_SETOP_TYPE_EXCEPT;
     sel1.order_by = NULL;
 
-    sel2.select = &ssel2;
     sel2.next = &sel3;
     sel2.setop = PARSER_SETOP_TYPE_UNION_ALL;
     sel2.order_by = NULL;
 
-    sel3.select = &ssel3;
     sel3.next = &sel4;
     sel3.setop = PARSER_SETOP_TYPE_INTERSECT;
     sel3.order_by = NULL;
 
-    sel4.select = &ssel4;
     sel4.next = NULL;
     sel4.order_by = &ordby;
 
@@ -1703,9 +1688,8 @@ int test_parser_functions()
     ref_stmt.insert_stmt.columns = &col1;
     ref_stmt.insert_stmt.select_stmt.next = NULL;
     ref_stmt.insert_stmt.select_stmt.order_by = NULL;
-    ref_stmt.insert_stmt.select_stmt.select = &ssel1;
-    memset(&ssel1, 0, sizeof(ssel1));
-    ssel1.uniq_type = PARSER_UNIQ_TYPE_DISTINCT;
+    memset(&ref_stmt.insert_stmt.select_stmt.select, 0, sizeof(ref_stmt.insert_stmt.select_stmt.select));
+    ref_stmt.insert_stmt.select_stmt.select.uniq_type = PARSER_UNIQ_TYPE_DISTINCT;
 
     if(parser_parse(&stmt, lexer, pi) != 0) return __LINE__;
     if(stmt == NULL) return __LINE__;

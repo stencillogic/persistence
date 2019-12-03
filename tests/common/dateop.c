@@ -1,9 +1,12 @@
 #include "tests.h"
 #include "common/dateop.h"
 #include "calendar/grigorian.h"
+#include <stdio.h>
 
 int test_dateop_functions()
 {
+    puts("Testing dateop functions");
+
     dateop_set_calendar(DATEOP_CALENDAR_GRIGORIAN);
 
     if(dateop_extract_year != grigorian_extract_year) return __LINE__;

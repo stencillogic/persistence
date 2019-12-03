@@ -1,6 +1,6 @@
 #include "common/error.h"
 
-#define ERROR_CODE_NUM 9
+#define ERROR_CODE_NUM 10
 
 achar *g_error_msg[] =
 {
@@ -13,6 +13,7 @@ achar *g_error_msg[] =
     _ach("ECODE=00007: syntax error"),
     _ach("ECODE=00008: datatype mismatch"),
     _ach("ECODE=00009: out of memory"),
+    _ach("ECODE=00010: semantic error"),
 };
 
 error_code g_current_error_code = 0;

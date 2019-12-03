@@ -22,7 +22,8 @@ int test_expression_functions()
     if(0 != string_literal_append_char(strlit1, (const uint8 *)"abc", 3)) return __LINE__;
     if(0 != string_literal_append_char(strlit2, (const uint8 *)"abc", 3)) return __LINE__;
 
-    handle sh = stack_create(4, sizeof(parser_ast_expr *), malloc(stack_get_alloc_sz(1, sizeof(parser_ast_expr *))));
+    uint32 stack_sz = 4;
+    handle sh = stack_create(stack_sz, sizeof(parser_ast_expr *), malloc(stack_get_alloc_sz(stack_sz, sizeof(parser_ast_expr *))));
     if(NULL == sh) return __LINE__;
 
 
@@ -458,7 +459,7 @@ int test_expression_functions()
     }
 
 
-    puts("Testing expression_calc_expr");
+    puts("Testing expression_calc_expr with constants only");
 
     // 4/2 + 5*3 > 0 and 1=1
 
@@ -555,8 +556,8 @@ int test_expression_functions()
     if(ee->boolean != 1) return __LINE__;
 
 
-
-    puts("Testing expression_calc_expr with ignore_name = 1");
+/*
+    puts("Testing expression_calc_expr with names");
 
     // 4/2 + 5*3 > a and 1 = a   ->   17 > a and a = 1
 
@@ -842,6 +843,6 @@ int test_expression_functions()
     if(ee->num.e != 0) return __LINE__;
     if(ee->num.n != 1) return __LINE__;
     if(ee->num.m[0] != 1) return __LINE__;
-
+*/
     return 0;
 }

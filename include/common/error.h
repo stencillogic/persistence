@@ -16,6 +16,7 @@ typedef enum _error_code
     ERROR_SYNTAX_ERROR = 6,
     ERROR_DATATYPE_MISMATCH = 7,
     ERROR_OUT_OF_MEMORY = 8,
+    ERROR_SEMANTIC_ERROR = 9,
 } error_code;
 
 // return error code of last operation

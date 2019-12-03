@@ -42,7 +42,7 @@ struct _parser_state
 // predefinitions
 sint8 parser_parse_expr(parser_ast_expr *stmt);
 sint8 parser_parse_expr_with_op_prio(parser_ast_expr *stmt, uint8 highest_lvl);
-sint8 parser_parse_select(parser_ast_select *stmt);
+sint8 parser_parse_select(parser_ast_select *stmt, uint64 *cnt);
 
 
 
@@ -120,6 +120,9 @@ sint8 parser_parse_identifier(uint8 *identifier, uint16 *identifier_len, uint16 
 sint8 parser_parse_name(parser_ast_name *stmt)
 {
     sint8 res;
+
+    stmt->pos.line = g_parser_state.lexem.line;
+    stmt->pos.col = g_parser_state.lexem.col;
 
     if(g_parser_state.lexem.type == LEXEM_TYPE_IDENTIFIER)
     {
@@ -480,6 +483,9 @@ sint8 parser_parse_expr_with_op_prio(parser_ast_expr *stmt, uint8 highest_lvl)
 
 sint8 parser_parse_expr(parser_ast_expr *stmt)
 {
+    stmt->pos.line = g_parser_state.lexem.line;
+    stmt->pos.col = g_parser_state.lexem.col;
+
     g_parser_state.saved_op = PARSER_EXPR_OP_TYPE_NONE;
     return parser_parse_expr_with_op_prio(stmt, 255);
 }
@@ -519,12 +525,13 @@ sint8 parser_parse_named_expr(parser_ast_named_expr *stmt)
 
 
 // expression list with aliases: <expr1> as a, <expr2> b, <expr3> , ...
-sint8 parser_parse_named_expr_list(parser_ast_expr_list *stmt)
+sint8 parser_parse_named_expr_list(parser_ast_expr_list *stmt, uint64 *cnt)
 {
     sint8 res;
 
     stmt->named = 1;
     if((res = parser_parse_named_expr(&stmt->named_expr)) != 0) return res;
+    *cnt = 1;
 
     while(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA)
     {
@@ -536,6 +543,7 @@ sint8 parser_parse_named_expr_list(parser_ast_expr_list *stmt)
         stmt->named = 1;
 
         if((res = parser_parse_named_expr(&stmt->named_expr)) != 0) return res;
+        (*cnt)++;
     }
 
     return 0;
@@ -543,11 +551,12 @@ sint8 parser_parse_named_expr_list(parser_ast_expr_list *stmt)
 
 
 // expression list: <expr1> , <expr2> , <expr3> ...
-sint8 parser_parse_expr_list(parser_ast_expr_list *stmt)
+sint8 parser_parse_expr_list(parser_ast_expr_list *stmt, uint64 *cnt)
 {
     sint8 res;
 
     if((res = parser_parse_expr(&stmt->expr)) != 0) return res;
+    *cnt = 1;
 
     while(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_COMMA)
     {
@@ -558,6 +567,7 @@ sint8 parser_parse_expr_list(parser_ast_expr_list *stmt)
         stmt = stmt->next;
 
         if((res = parser_parse_expr(&stmt->expr)) != 0) return res;
+        (*cnt)++;
     }
 
     return 0;
@@ -570,10 +580,11 @@ sint8 parser_parse_expr_list(parser_ast_expr_list *stmt)
 
 
 // from part of select with joins
-sint8 parser_parse_from(parser_ast_from *stmt)
+sint8 parser_parse_from(parser_ast_from *stmt, uint64 *cnt)
 {
     sint8 res, first_run = 1, from_item, completed = 0;
 
+    *cnt = 0;
     do
     {
         from_item = 0;
@@ -589,7 +600,7 @@ sint8 parser_parse_from(parser_ast_from *stmt)
                 stmt->type = PARSER_FROM_TYPE_SUBQUERY;
 
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-                if((res = parser_parse_select(&stmt->subquery)) != 0) return res;
+                if((res = parser_parse_select(&stmt->subquery, &stmt->subquery_cnt)) != 0) return res;
 
                 if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
                 {
@@ -625,6 +636,8 @@ sint8 parser_parse_from(parser_ast_from *stmt)
 
         if(from_item)
         {
+            (*cnt)++;
+
             // check for alias
             if((res = parser_parse_optional_alias(stmt->alias, &stmt->alias_len)) != 0) return res;
         }
@@ -741,14 +754,17 @@ sint8 parser_parse_single_select(parser_ast_single_select *stmt)
     else
     {
         if((res = parser_allocate_ast_el((void **)&stmt->projection, sizeof(*stmt->projection))) != 0) return res;
-        if((res = parser_parse_named_expr_list(stmt->projection)) != 0) return res;
+        if((res = parser_parse_named_expr_list(stmt->projection, &stmt->projection_cnt)) != 0) return res;
     }
 
     if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_FROM)
     {
-        if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if((res = parser_allocate_ast_el((void **)&stmt->from, sizeof(*stmt->from))) != 0) return res;
-        if((res = parser_parse_from(stmt->from)) != 0) return res;
+        stmt->from->pos.line = g_parser_state.lexem.line;
+        stmt->from->pos.col = g_parser_state.lexem.col;
+
+        if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+        if((res = parser_parse_from(stmt->from, &stmt->from_cnt)) != 0) return res;
     }
 
     if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_WHERE)
@@ -765,13 +781,13 @@ sint8 parser_parse_single_select(parser_ast_single_select *stmt)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             if((res = parser_allocate_ast_el((void **)&stmt->group_by, sizeof(*stmt->group_by))) != 0) return res;
-            if((res = parser_parse_expr_list(stmt->group_by)) != 0) return res;
+            if((res = parser_parse_expr_list(stmt->group_by, &stmt->group_by_cnt)) != 0) return res;
 
             if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_HAVING)
             {
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                 if((res = parser_allocate_ast_el((void **)&stmt->having, sizeof(*stmt->having))) != 0) return res;
-                if((res = parser_parse_expr_list(stmt->having)) != 0) return res;
+                if((res = parser_parse_expr_list(stmt->having, &stmt->having_cnt)) != 0) return res;
             }
         }
         else
@@ -787,12 +803,15 @@ sint8 parser_parse_single_select(parser_ast_single_select *stmt)
 
 
 // parse order by: <expr> [ASC|DESC] [NULLS LAST | NULLS FIRST] , ...
-sint8 parser_parse_order_by(parser_ast_order_by *stmt)
+sint8 parser_parse_order_by(parser_ast_order_by *stmt, uint64 *cnt)
 {
     sint8 res;
 
+    *cnt = 0;
     do
     {
+        (*cnt)++;
+
         stmt->sort_type = PARSER_SORT_TYPE_ASC;
         stmt->null_order = PARSER_NULL_ORDER_TYPE_LAST;
 
@@ -862,15 +881,16 @@ sint8 parser_parse_order_by(parser_ast_order_by *stmt)
 
 
 // full select statement
-sint8 parser_parse_select(parser_ast_select *stmt)
+sint8 parser_parse_select(parser_ast_select *stmt, uint64 *cnt)
 {
     sint8 res, setop;
 
+    *cnt = 0;
     do
     {
-        if((res = parser_allocate_ast_el((void **)&stmt->select, sizeof(*stmt->select))) != 0) return res;
+        (*cnt)++;
 
-        if((res = parser_parse_single_select(stmt->select)) != 0) return res;
+        if((res = parser_parse_single_select(&stmt->select)) != 0) return res;
 
         setop = 0;
         if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD)
@@ -904,9 +924,14 @@ sint8 parser_parse_select(parser_ast_select *stmt)
 
                 if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_SELECT)
                 {
-                    if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                     if((res = parser_allocate_ast_el((void **)&stmt->next, sizeof(*stmt->next))) != 0) return res;
+
                     stmt = stmt->next;
+                    stmt->select.pos.line = g_parser_state.lexem.line;
+                    stmt->select.pos.col = g_parser_state.lexem.col;
+
+                    if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
                 }
                 else
                 {
@@ -921,14 +946,20 @@ sint8 parser_parse_select(parser_ast_select *stmt)
     // order by
     if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_ORDER)
     {
+        uint64 line, col;
+        line = g_parser_state.lexem.line;
+        col = g_parser_state.lexem.col;
+
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_BY)
         {
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
             if((res = parser_allocate_ast_el((void **)&stmt->order_by, sizeof(*stmt->order_by))) != 0) return res;
+            stmt->order_by->pos.line = line;
+            stmt->order_by->pos.col = col;
 
-            if((res = parser_parse_order_by(stmt->order_by)) != 0) return res;
+            if((res = parser_parse_order_by(stmt->order_by, &stmt->order_by_cnt)) != 0) return res;
         }
         else
         {
@@ -947,12 +978,18 @@ sint8 parser_parse_select(parser_ast_select *stmt)
 
 
 // column name list: <colname_1> { , <colname_2> }
-sint8 parser_parse_colname_list(parser_ast_colname_list *stmt)
+sint8 parser_parse_colname_list(parser_ast_colname_list *stmt, uint64 *cnt)
 {
     sint8 res;
 
+    stmt->pos.line = g_parser_state.lexem.line;
+    stmt->pos.col = g_parser_state.lexem.col;
+
+    *cnt = 0;
     do
     {
+        (*cnt)++;
+
         if((res = parser_parse_identifier(stmt->col_name, &stmt->colname_len, MAX_TABLE_COL_NAME_LEN)) != 0) return res;
 
         // read ,
@@ -975,7 +1012,7 @@ sint8 parser_parse_colname_list(parser_ast_colname_list *stmt)
 
 
 // parse column list inside ( ), skip parsing if there is no (
-sint8 parser_parse_optional_enclosed_colname_list(parser_ast_colname_list **pstmt)
+sint8 parser_parse_optional_enclosed_colname_list(parser_ast_colname_list **pstmt, uint64 *cnt)
 {
     sint8 res;
     parser_ast_colname_list *stmt;
@@ -986,7 +1023,7 @@ sint8 parser_parse_optional_enclosed_colname_list(parser_ast_colname_list **pstm
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if((res = parser_allocate_ast_el((void **)&stmt, sizeof(*stmt))) != 0) return res;
         *pstmt = stmt;
-        if((res = parser_parse_colname_list(stmt)) != 0) return res;
+        if((res = parser_parse_colname_list(stmt, cnt)) != 0) return res;
 
         if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
         {
@@ -1004,7 +1041,7 @@ sint8 parser_parse_optional_enclosed_colname_list(parser_ast_colname_list **pstm
 
 
 // parse column list inside ( )
-sint8 parser_parse_enclosed_colname_list(parser_ast_colname_list *stmt)
+sint8 parser_parse_enclosed_colname_list(parser_ast_colname_list *stmt, uint64 *cnt)
 {
     sint8 res;
 
@@ -1012,7 +1049,7 @@ sint8 parser_parse_enclosed_colname_list(parser_ast_colname_list *stmt)
     {
         // column list
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-        if((res = parser_parse_colname_list(stmt)) != 0) return res;
+        if((res = parser_parse_colname_list(stmt, cnt)) != 0) return res;
 
         if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
         {
@@ -1044,7 +1081,7 @@ sint8 parser_parse_insert_header(parser_ast_insert *stmt)
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
         if((res = parser_parse_name(&stmt->target)) != 0) return res;
-        if((res = parser_parse_optional_enclosed_colname_list(&stmt->columns)) != 0) return res;
+        if((res = parser_parse_optional_enclosed_colname_list(&stmt->columns, &stmt->columns_cnt)) != 0) return res;
     }
     else
     {
@@ -1072,7 +1109,7 @@ sint8 parser_parse_insert(parser_ast_insert *stmt)
             if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_LPAR)
             {
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-                if((res = parser_parse_expr_list(&stmt->values)) != 0) return res;
+                if((res = parser_parse_expr_list(&stmt->values, &stmt->values_cnt)) != 0) return res;
 
                 if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
                 {
@@ -1095,7 +1132,7 @@ sint8 parser_parse_insert(parser_ast_insert *stmt)
             // insert as select
             stmt->type = PARSER_STMT_TYPE_INSERT_SELECT;
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-            if((res = parser_parse_select(&stmt->select_stmt)) != 0) return res;
+            if((res = parser_parse_select(&stmt->select_stmt, &stmt->select_stmt_cnt)) != 0) return res;
         }
         else
         {
@@ -1145,8 +1182,11 @@ sint8 parser_parse_update(parser_ast_update *stmt)
     set_list = &stmt->set_list;
 
     done = 0;
+    stmt->set_list_cnt = 0;
     do
     {
+        stmt->set_list_cnt++;
+
         // alias.col = expr
         if((res = parser_parse_name(&set_list->column)) != 0) return res;
 
@@ -1286,7 +1326,7 @@ sint8 parser_parse_constr_body(parser_ast_constr *stmt)
     {
         stmt->type = PARSER_CONSTRAINT_TYPE_UNIQUE;
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-        if((res = parser_parse_enclosed_colname_list(&stmt->columns)) != 0) return res;
+        if((res = parser_parse_enclosed_colname_list(&stmt->columns, &stmt->columns_cnt)) != 0) return res;
     }
     else if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_PRIMARY)
     {
@@ -1295,7 +1335,7 @@ sint8 parser_parse_constr_body(parser_ast_constr *stmt)
         {
             stmt->type = PARSER_CONSTRAINT_TYPE_PK;
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-            if((res = parser_parse_enclosed_colname_list(&stmt->columns)) != 0) return res;
+            if((res = parser_parse_enclosed_colname_list(&stmt->columns, &stmt->columns_cnt)) != 0) return res;
         }
         else
         {
@@ -1312,7 +1352,7 @@ sint8 parser_parse_constr_body(parser_ast_constr *stmt)
 
             // columns
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-            if((res = parser_parse_enclosed_colname_list(&stmt->columns)) != 0) return res;
+            if((res = parser_parse_enclosed_colname_list(&stmt->fk.columns, &stmt->fk.columns_cnt)) != 0) return res;
 
             if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_REFERENCES)
             {
@@ -1328,7 +1368,7 @@ sint8 parser_parse_constr_body(parser_ast_constr *stmt)
             if((res = parser_parse_name(&stmt->fk.ref_table)) != 0) return res;
 
             // ref columns
-            if((res = parser_parse_optional_enclosed_colname_list(&stmt->fk.ref_columns)) != 0) return res;
+            if((res = parser_parse_optional_enclosed_colname_list(&stmt->fk.ref_columns, &stmt->fk.ref_columns_cnt)) != 0) return res;
 
             // on delete
             if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_ON)
@@ -1469,6 +1509,9 @@ sint8 parser_parse_col_datatype(parser_ast_col_datatype *datatype, sint8 *dt_det
 {
     sint8 res;
 
+    datatype->pos.line = g_parser_state.lexem.line;
+    datatype->pos.col = g_parser_state.lexem.col;
+
     if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD)
     {
         if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_CHARACTER)
@@ -1586,12 +1629,18 @@ sint8 parser_parse_col_datatype(parser_ast_col_datatype *datatype, sint8 *dt_det
 
 
 // table columns
-sint8 parser_parse_col_desc_list(parser_ast_col_desc_list *stmt)
+sint8 parser_parse_col_desc_list(parser_ast_col_desc_list *stmt, uint64 *cnt)
 {
     sint8 res, dt_determined;
 
+    *cnt = 0;
     do
     {
+        (*cnt)++;
+
+        stmt->col_desc.pos.line = g_parser_state.lexem.line;
+        stmt->col_desc.pos.col = g_parser_state.lexem.col;
+
         // column name
         if((res = parser_parse_identifier(stmt->col_desc.name, &stmt->col_desc.name_len, MAX_TABLE_COL_NAME_LEN)) != 0) return res;
 
@@ -1660,12 +1709,18 @@ sint8 parser_parse_col_desc_list(parser_ast_col_desc_list *stmt)
 
 
 // table constraints
-sint8 parser_parse_table_constraints(parser_ast_constr_list *stmt)
+sint8 parser_parse_table_constraints(parser_ast_constr_list *stmt, uint64 *cnt)
 {
     sint8 res;
 
+    *cnt = 0;
     do
     {
+        (*cnt)++;
+
+        stmt->constr.pos.line = g_parser_state.lexem.line;
+        stmt->constr.pos.col = g_parser_state.lexem.col;
+
         // constr name
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
         if((res = parser_parse_identifier(stmt->constr.name, &stmt->constr.name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
@@ -1709,13 +1764,13 @@ sint8 parser_parse_create_table(parser_ast_create_table *stmt)
     {
         // cloumn list
         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-        if((res = parser_parse_col_desc_list(&stmt->cols)) != 0) return res;
+        if((res = parser_parse_col_desc_list(&stmt->cols, &stmt->cols_cnt)) != 0) return res;
 
         // table constraints
         if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_CONSTRAINT)
         {
             if((res = parser_allocate_ast_el((void **)&stmt->constr, sizeof(*stmt->constr))) != 0) return res;
-            if((res = parser_parse_table_constraints(stmt->constr)) != 0) return res;
+            if((res = parser_parse_table_constraints(stmt->constr, &stmt->constr_cnt)) != 0) return res;
         }
 
         if(g_parser_state.lexem.type == LEXEM_TYPE_TOKEN && g_parser_state.lexem.token == LEXER_TOKEN_RPAR)
@@ -1793,6 +1848,9 @@ sint8 parser_parse_alter_column(parser_ast_alter_table_column *stmt)
     sint8 res, dt_determined;
     parser_ast_col_datatype datatype;
 
+    stmt->pos.line = g_parser_state.lexem.line;
+    stmt->pos.col = g_parser_state.lexem.col;
+
     // column name
     if((res = parser_parse_identifier(stmt->column, &stmt->column_len, MAX_TABLE_COL_NAME_LEN)) != 0) return res;
 
@@ -1865,6 +1923,10 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
                     // add constraint
                     stmt->type = PARSER_STMT_TYPE_ALTER_TABLE_ADD_CONSTR;
                     if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                    stmt->add_constr.pos.line = g_parser_state.lexem.line;
+                    stmt->add_constr.pos.col = g_parser_state.lexem.col;
+
                     if((res = parser_parse_identifier(stmt->add_constr.name, &stmt->add_constr.name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
                     if((res = parser_parse_constr_body(&stmt->add_constr)) != 0) return res;
                 }
@@ -1908,6 +1970,10 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
                     // drop column
                     stmt->type = PARSER_STMT_TYPE_ALTER_TABLE_DROP_COL;
                     if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                    stmt->column.pos.line = g_parser_state.lexem.line;
+                    stmt->column.pos.col = g_parser_state.lexem.col;
+
                     if((res = parser_parse_identifier(stmt->column.column, &stmt->column.column_len, MAX_TABLE_COL_NAME_LEN)) != 0) return res;
                 }
                 else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_CONSTRAINT)
@@ -1915,6 +1981,10 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
                     // drop constraint
                     stmt->type = PARSER_STMT_TYPE_ALTER_TABLE_DROP_CONSTR;
                     if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                    stmt->drop_constr.pos.line = g_parser_state.lexem.line;
+                    stmt->drop_constr.pos.col = g_parser_state.lexem.col;
+
                     if((res = parser_parse_identifier(stmt->drop_constr.name, &stmt->drop_constr.name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
                 }
                 else
@@ -1927,6 +1997,10 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
             {
                 // drop column
                 stmt->type = PARSER_STMT_TYPE_ALTER_TABLE_DROP_COL;
+
+                stmt->column.pos.line = g_parser_state.lexem.line;
+                stmt->column.pos.col = g_parser_state.lexem.col;
+
                 if((res = parser_parse_identifier(stmt->column.column, &stmt->column.column_len, MAX_TABLE_COL_NAME_LEN)) != 0) return res;
             }
             else
@@ -1945,10 +2019,18 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
                     // rename column
                     stmt->type = PARSER_STMT_TYPE_ALTER_TABLE_RENAME_COLUMN;
                     if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                    stmt->rename_column.pos.line = g_parser_state.lexem.line;
+                    stmt->rename_column.pos.col = g_parser_state.lexem.col;
+
                     if((res = parser_parse_identifier(stmt->rename_column.name, &stmt->rename_column.name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
                     if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_TO)
                     {
                         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                        stmt->rename_column.new_pos.line = g_parser_state.lexem.line;
+                        stmt->rename_column.new_pos.col = g_parser_state.lexem.col;
+
                         if((res = parser_parse_identifier(stmt->rename_column.new_name, &stmt->rename_column.new_name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
                     }
                     else
@@ -1962,10 +2044,18 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
                     // rename constraint
                     stmt->type = PARSER_STMT_TYPE_ALTER_TABLE_RENAME_CONSTR;
                     if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                    stmt->rename_constr.pos.line = g_parser_state.lexem.line;
+                    stmt->rename_constr.pos.col = g_parser_state.lexem.col;
+
                     if((res = parser_parse_identifier(stmt->rename_constr.name, &stmt->rename_constr.name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
                     if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_TO)
                     {
                         if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                        stmt->rename_constr.new_pos.line = g_parser_state.lexem.line;
+                        stmt->rename_constr.new_pos.col = g_parser_state.lexem.col;
+
                         if((res = parser_parse_identifier(stmt->rename_constr.new_name, &stmt->rename_constr.new_name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
                     }
                     else
@@ -1979,6 +2069,10 @@ sint8 parser_parse_alter_table(parser_ast_alter_table *stmt)
                     // rename table
                     stmt->type = PARSER_STMT_TYPE_ALTER_TABLE_RENAME;
                     if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
+
+                    stmt->rename_table.pos.line = g_parser_state.lexem.line;
+                    stmt->rename_table.pos.col = g_parser_state.lexem.col;
+
                     if((res = parser_parse_identifier(stmt->rename_table.new_name, &stmt->rename_table.new_name_len, MAX_CONSTRAINT_NAME_LEN)) != 0) return res;
                 }
                 else
@@ -2035,8 +2129,11 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
         if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_SELECT)
         {
             stmt->type = PARSER_STMT_TYPE_SELECT;
+            stmt->select_stmt.select.pos.line = g_parser_state.lexem.line;
+            stmt->select_stmt.select.pos.col = g_parser_state.lexem.col;
+
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
-            if((res = parser_parse_select(&stmt->select_stmt)) != 0)
+            if((res = parser_parse_select(&stmt->select_stmt, &stmt->select_stmt_cnt)) != 0)
             {
                 parser_deallocate_stmt(stmt);
                 return res;
@@ -2045,6 +2142,9 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
         else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_INSERT)
         {
             stmt->type = PARSER_STMT_TYPE_INSERT;
+            stmt->insert_stmt.pos.line = g_parser_state.lexem.line;
+            stmt->insert_stmt.pos.col = g_parser_state.lexem.col;
+
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             if((res = parser_parse_insert(&stmt->insert_stmt)) != 0)
             {
@@ -2055,6 +2155,9 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
         else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_UPDATE)
         {
             stmt->type = PARSER_STMT_TYPE_UPDATE;
+            stmt->update_stmt.pos.line = g_parser_state.lexem.line;
+            stmt->update_stmt.pos.col = g_parser_state.lexem.col;
+
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             if((res = parser_parse_update(&stmt->update_stmt)) != 0)
             {
@@ -2065,6 +2168,9 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
         else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_DELETE)
         {
             stmt->type = PARSER_STMT_TYPE_DELETE;
+            stmt->delete_stmt.pos.line = g_parser_state.lexem.line;
+            stmt->delete_stmt.pos.col = g_parser_state.lexem.col;
+
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
             if((res = parser_parse_delete(&stmt->delete_stmt)) != 0)
             {
@@ -2074,12 +2180,19 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
         }
         else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_CREATE)
         {
+            uint64 line, col;
+            line = g_parser_state.lexem.line;
+            col = g_parser_state.lexem.col;
+
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
             if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_TABLE)
             {
                 // create table
                 stmt->type = PARSER_STMT_TYPE_CREATE_TABLE;
+                stmt->create_table_stmt.pos.line = line;
+                stmt->create_table_stmt.pos.col = col;
+
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                 if((res = parser_parse_create_table(&stmt->create_table_stmt)) != 0)
                 {
@@ -2091,6 +2204,9 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
             {
                 // create database
                 stmt->type = PARSER_STMT_TYPE_CREATE_DATABASE;
+                stmt->create_database_stmt.pos.line = line;
+                stmt->create_database_stmt.pos.col = col;
+
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                 if((res = parser_parse_create_database(&stmt->create_database_stmt)) != 0)
                 {
@@ -2107,12 +2223,19 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
         }
         else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_DROP)
         {
+            uint64 line, col;
+            line = g_parser_state.lexem.line;
+            col = g_parser_state.lexem.col;
+
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
             if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_TABLE)
             {
                 // drop table
                 stmt->type = PARSER_STMT_TYPE_DROP_TABLE;
+                stmt->drop_database_stmt.pos.line = line;
+                stmt->drop_database_stmt.pos.col = col;
+
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                 if((res = parser_parse_drop_table(&stmt->drop_table_stmt)) != 0)
                 {
@@ -2124,6 +2247,9 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
             {
                 // drop database
                 stmt->type = PARSER_STMT_TYPE_DROP_DATABASE;
+                stmt->drop_database_stmt.pos.line = line;
+                stmt->drop_database_stmt.pos.col = col;
+
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                 if((res = parser_parse_drop_database(&stmt->drop_database_stmt)) != 0)
                 {
@@ -2139,12 +2265,19 @@ sint8 parser_parse(parser_ast_stmt **pstmt, handle lexer, parser_interface pi)
         }
         else if(g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_ALTER)
         {
+            uint64 line, col;
+            line = g_parser_state.lexem.line;
+            col = g_parser_state.lexem.col;
+
             if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
 
             if(g_parser_state.lexem.type == LEXEM_TYPE_RESERVED_WORD && g_parser_state.lexem.reserved_word == LEXER_RESERVED_WORD_TABLE)
             {
                 // drop table
                 stmt->type = PARSER_STMT_TYPE_ALTER_TABLE;
+                stmt->alter_table_stmt.pos.line = line;
+                stmt->alter_table_stmt.pos.col = col;
+
                 if((res = lexer_next(g_parser_state.lexer, &g_parser_state.lexem)) != 0) return res;
                 if((res = parser_parse_alter_table(&stmt->alter_table_stmt)) != 0)
                 {

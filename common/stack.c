@@ -24,9 +24,12 @@ handle stack_create(uint32 n, size_t el_sz, void *buf)
 {
     stack_state *ss = (stack_state *)buf;
 
-    ss->sp = 0;
-    ss->el_num = n;
-    ss->el_sz = el_sz;
+    if(NULL != buf)
+    {
+        ss->sp = 0;
+        ss->el_num = n;
+        ss->el_sz = el_sz;
+    }
 
     return (handle)ss;
 }

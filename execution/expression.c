@@ -284,6 +284,7 @@ sint8 expression_calc_base_expr(parser_ast_expr *expr, uint8 ignore_name)
     return 0;
 }
 
+
 sint8 expression_calc_const_expr(parser_ast_expr *expr, handle sh)
 {
     parser_ast_expr *prev = expr;

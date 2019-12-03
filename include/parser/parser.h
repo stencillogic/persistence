@@ -183,14 +183,22 @@ typedef enum _parser_select_type
 ///////////////////////////////// GENERAL CONSTRUCTS
 
 
+// element beginning position
+typedef struct _parser_ast_element_pos
+{
+    uint64  line;
+    uint64  col;
+} parser_ast_element_pos;
+
 
 // AST NODE: name
 typedef struct _parser_ast_name
 {
-    uint16  first_part_len;
-    uint16  second_part_len;
-    uint8   first_part[LEXER_MAX_IDENTIFIER_LEN];
-    uint8   second_part[LEXER_MAX_IDENTIFIER_LEN];
+    parser_ast_element_pos  pos;
+    uint16                  first_part_len;
+    uint16                  second_part_len;
+    uint8                   first_part[LEXER_MAX_IDENTIFIER_LEN];
+    uint8                   second_part[LEXER_MAX_IDENTIFIER_LEN];
 } parser_ast_name;
 
 
@@ -198,6 +206,7 @@ typedef struct _parser_ast_name
 typedef struct _parser_ast_expr parser_ast_expr;
 typedef struct _parser_ast_expr
 {
+    parser_ast_element_pos  pos;            // beginning of expression
     union
     {
         uint8               boolean;
@@ -247,11 +256,16 @@ typedef struct _parser_ast_from parser_ast_from;
 // AST NODE: parser single select
 typedef struct _parser_ast_single_select
 {
+    parser_ast_element_pos  pos;            // statement beginning
     parser_uniq_type        uniq_type;
+    uint64                  projection_cnt;
     parser_ast_expr_list    *projection;    // if NULL all is selected
+    uint64                  from_cnt;
     parser_ast_from         *from;          // optional, can be NULL
     parser_ast_expr         *where;         // optional, can be NULL, must resolve to boolean
+    uint64                  group_by_cnt;
     parser_ast_expr_list    *group_by;      // optional, can be NULL
+    uint64                  having_cnt;
     parser_ast_expr_list    *having;        // optional, can be NULL, must resolve to boolean
 } parser_ast_single_select;
 
@@ -260,6 +274,7 @@ typedef struct _parser_ast_single_select
 typedef struct _parser_ast_order_by parser_ast_order_by;
 typedef struct _parser_ast_order_by
 {
+    parser_ast_element_pos  pos;        // beginning of order by section
     parser_ast_expr         expr;
     parser_sort_type        sort_type;
     parser_null_order_type  null_order;
@@ -270,9 +285,10 @@ typedef struct _parser_ast_order_by
 // AST NODE: select stmt
 typedef struct _parser_ast_select
 {
-    parser_ast_single_select    *select;
+    parser_ast_single_select    select;
     parser_setop_type           setop;
     parser_ast_select           *next;              // optional, can be NULL
+    uint64                      order_by_cnt;
     parser_ast_order_by         *order_by;          // optional, can be NULL
 } parser_ast_select;
 
@@ -280,7 +296,9 @@ typedef struct _parser_ast_select
 // AST NODE: from item
 typedef struct _parser_ast_from
 {
+    parser_ast_element_pos  pos;            // beginning of FROM section
     parser_from_type        type;
+    uint64                  subquery_cnt;
     union
     {
         parser_ast_select   subquery;
@@ -302,6 +320,7 @@ typedef struct _parser_ast_from
 typedef struct _parser_ast_colname_list parser_ast_colname_list;
 typedef struct _parser_ast_colname_list
 {
+    parser_ast_element_pos  pos;            // beginning of target columns list
     uint8                   col_name[MAX_TABLE_COL_NAME_LEN];
     uint16                  colname_len;
     parser_ast_colname_list *next;
@@ -311,9 +330,16 @@ typedef struct _parser_ast_colname_list
 // AST NODE: insert statement
 typedef struct _parser_ast_insert
 {
+    parser_ast_element_pos  pos;                // statement beginning
     parser_stmt_type        type;
     parser_ast_name         target;
-    parser_ast_colname_list *columns;       // optional, can be NULL
+    uint64                  columns_cnt;        // single select statements inside full select stmt
+    parser_ast_colname_list *columns;           // optional, can be NULL
+    union
+    {
+        uint64              select_stmt_cnt;    // single select statements inside full select stmt
+        uint64              values_cnt;         // single select statements inside full select stmt
+    };
     union
     {
         parser_ast_expr_list    values;        // depending on type
@@ -339,9 +365,11 @@ typedef struct _parser_ast_set_list
 // AST NODE: update
 typedef struct _parser_ast_update
 {
+    parser_ast_element_pos  pos;            // statement beginning
     parser_ast_name         target;
     uint8                   alias[PARSER_MAX_ALIAS_NAME_LEN];
     uint16                  alias_len;
+    uint64                  set_list_cnt;
     parser_ast_set_list     set_list;
     parser_ast_expr         *where;     // optional, can be NULL
 } parser_ast_update;
@@ -354,6 +382,7 @@ typedef struct _parser_ast_update
 // AST NODE: update
 typedef struct _parser_ast_delete
 {
+    parser_ast_element_pos  pos;            // statement beginning
     parser_ast_name         target;
     uint8                   alias[PARSER_MAX_ALIAS_NAME_LEN];
     uint16                  alias_len;
@@ -368,15 +397,19 @@ typedef struct _parser_ast_delete
 // AST NODE: constraint
 typedef struct _parser_ast_constr
 {
+    parser_ast_element_pos  pos;
     parser_constraint_type  type;
     uint8                   name[MAX_CONSTRAINT_NAME_LEN];
     uint16                  name_len;
     union
     {
         parser_ast_expr             expr;          // check
+        uint64                      columns_cnt;
         parser_ast_colname_list     columns;       // unique, pk
         struct {
-            parser_ast_colname_list columns;       // fk (soruce)
+            uint64                  columns_cnt;
+            parser_ast_colname_list columns;
+            uint64                  ref_columns_cnt;
             parser_ast_colname_list *ref_columns;  // fk (dest); optional
             parser_ast_name         ref_table;     // referenced table
             parser_on_delete        fk_on_delete;
@@ -397,7 +430,8 @@ typedef struct _parser_ast_constr_list
 // AST NODE: column datatype descriptor
 typedef struct _parser_ast_col_datatype
 {
-    column_datatype     datatype;
+    parser_ast_element_pos  pos;            // beginning of the datatype name
+    column_datatype         datatype;
     union
     {
         sint64 char_len;
@@ -414,6 +448,7 @@ typedef struct _parser_ast_col_datatype
 // AST NODE: column descriptor
 typedef struct _parser_ast_col_desc
 {
+    parser_ast_element_pos  pos;                        // beginning of the column name
     uint8                   name[MAX_TABLE_COL_NAME_LEN];
     uint16                  name_len;
     parser_ast_col_datatype datatype;
@@ -434,8 +469,11 @@ typedef struct _parser_ast_col_desc_list
 // AST NODE: create table
 typedef struct _parser_ast_create_table
 {
+    parser_ast_element_pos      pos;        // statement beginning
     parser_ast_name             name;
+    uint64                      cols_cnt;
     parser_ast_col_desc_list    cols;
+    uint64                      constr_cnt;
     parser_ast_constr_list      *constr;    // optional
 } parser_ast_create_table;
 
@@ -447,7 +485,8 @@ typedef struct _parser_ast_create_table
 // AST NODE: drop table
 typedef struct _parser_ast_drop_table
 {
-    parser_ast_name     table;
+    parser_ast_element_pos  pos;            // statement beginning
+    parser_ast_name         table;
 } parser_ast_drop_table;
 
 
@@ -459,6 +498,7 @@ typedef struct _parser_ast_drop_table
 // AST NODE: alter table add/modify/drop column
 typedef struct _parser_ast_alter_table_column
 {
+    parser_ast_element_pos  pos;            // beginning of the column name
     uint8                   column[MAX_TABLE_COL_NAME_LEN];
     uint16                  column_len;
     uint8                   nullable;                       // 1 - nullable, 2 - not null, 0 - not specified
@@ -470,42 +510,49 @@ typedef struct _parser_ast_alter_table_column
 // AST NODE: alter table drop constraint
 typedef struct _parser_ast_drop_constraint
 {
-    uint8           name[MAX_CONSTRAINT_NAME_LEN];
-    uint16          name_len;
+    parser_ast_element_pos  pos;            // beginning of the constraint name
+    uint8                   name[MAX_CONSTRAINT_NAME_LEN];
+    uint16                  name_len;
 } parser_ast_drop_constraint;
 
 
 // AST NODE: rename table
 typedef struct _parser_ast_rename_table
 {
-    uint16          new_name_len;
-    uint8           new_name[MAX_TABLE_NAME_LEN];
+    parser_ast_element_pos  pos;            // beginning of the table name
+    uint16                  new_name_len;
+    uint8                   new_name[MAX_TABLE_NAME_LEN];
 } parser_ast_rename_table;
 
 
 // AST NODE: alter table rename constraint
 typedef struct _parser_ast_rename_constr
 {
-    uint16          name_len;
-    uint16          new_name_len;
-    uint8           name[MAX_CONSTRAINT_NAME_LEN];
-    uint8           new_name[MAX_CONSTRAINT_NAME_LEN];
+    parser_ast_element_pos  pos;            // beginning of old name
+    parser_ast_element_pos  new_pos;        // beginning of new name
+    uint16                  name_len;
+    uint16                  new_name_len;
+    uint8                   name[MAX_CONSTRAINT_NAME_LEN];
+    uint8                   new_name[MAX_CONSTRAINT_NAME_LEN];
 } parser_ast_rename_constr;
 
 
 // AST NODE: alter table rename column
 typedef struct _parser_ast_rename_column
 {
-    uint16          name_len;
-    uint16          new_name_len;
-    uint8           name[MAX_TABLE_COL_NAME_LEN];
-    uint8           new_name[MAX_TABLE_COL_NAME_LEN];
+    parser_ast_element_pos  pos;            // beginning of old name
+    parser_ast_element_pos  new_pos;        // beginning of new name
+    uint16                  name_len;
+    uint16                  new_name_len;
+    uint8                   name[MAX_TABLE_COL_NAME_LEN];
+    uint8                   new_name[MAX_TABLE_COL_NAME_LEN];
 } parser_ast_rename_column;
 
 
 // AST NODE: alter table
 typedef struct _parser_ast_alter_table
 {
+    parser_ast_element_pos  pos;            // statement beginning
     parser_ast_name         table;
     parser_stmt_type        type;
     union
@@ -527,8 +574,9 @@ typedef struct _parser_ast_alter_table
 // AST NODE: create database
 typedef struct _parser_ast_create_database
 {
-    uint8           name[PARSER_MAX_DATABASE_NAME_LEN];
-    uint16          name_len;
+    parser_ast_element_pos  pos;            // statement beginning
+    uint8                   name[PARSER_MAX_DATABASE_NAME_LEN];
+    uint16                  name_len;
 } parser_ast_create_database;
 
 
@@ -539,8 +587,9 @@ typedef struct _parser_ast_create_database
 // AST NODE: drop database
 typedef struct _parser_ast_drop_database
 {
-    uint8           name[PARSER_MAX_DATABASE_NAME_LEN];
-    uint16          name_len;
+    parser_ast_element_pos  pos;            // statement beginning
+    uint8                   name[PARSER_MAX_DATABASE_NAME_LEN];
+    uint16                  name_len;
 } parser_ast_drop_database;
 
 
@@ -552,6 +601,7 @@ typedef struct _parser_ast_drop_database
 typedef struct _parser_ast_stmt
 {
     parser_stmt_type    type;
+    uint64              select_stmt_cnt;            // single select statements inside full select stmt
     union
     {
         parser_ast_select           select_stmt;

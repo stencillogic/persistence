@@ -47,4 +47,7 @@ int test_stack_functions();
 // test expression functions
 int test_expression_functions();
 
+// test htable functions
+int test_htable_functions();
+
 #endif
